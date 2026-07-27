@@ -1,6 +1,9 @@
-// Calls the Anthropic API server-side so your API key never reaches the browser.
+// Calls Groq's free API server-side so the key never reaches the browser.
+// Groq (https://console.groq.com) gives out API keys for free, no credit card
+// required, with a generous free-tier rate limit -- good fit for this game.
+//
 // Requires this Vercel environment variable:
-//   ANTHROPIC_API_KEY   (create one at https://console.anthropic.com)
+//   GROQ_API_KEY   (create one at https://console.groq.com/keys)
 
 module.exports = async (req, res) => {
   if (req.method !== 'POST') {
@@ -8,9 +11,9 @@ module.exports = async (req, res) => {
     return;
   }
 
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = process.env.GROQ_API_KEY;
   if (!key) {
-    res.status(500).json({ error: 'Missing ANTHROPIC_API_KEY environment variable in Vercel.' });
+    res.status(500).json({ error: 'Missing GROQ_API_KEY environment variable in Vercel.' });
     return;
   }
 
@@ -21,22 +24,35 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01'
+        Authorization: 'Bearer ' + key
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-5',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: maxTokens || 1000,
-        system: system,
-        messages: [{ role: 'user', content: user }]
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ]
       })
     });
     const data = await r.json();
-    res.status(200).json(data);
+
+    if (data.error) {
+      res.status(500).json({ error: data.error.message || JSON.stringify(data.error) });
+      return;
+    }
+
+    const text = (data.choices && data.choices[0] && data.choices[0].message)
+      ? data.choices[0].message.content
+      : '';
+
+    // Normalize to the same shape the frontend already expects.
+    res.status(200).json({ content: [{ type: 'text', text }] });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
