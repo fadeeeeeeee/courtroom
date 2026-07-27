@@ -374,31 +374,33 @@
 
   async function readRoom(code){
     try{
-      const res = await window.storage.get(roomKey(code), true);
-      return res ? JSON.parse(res.value) : null;
-    }catch(e){ return null; }
+      const res = await fetch('/api/room?code=' + encodeURIComponent(code));
+      if(!res.ok) return null;
+      const data = await res.json();
+      return data.value ? JSON.parse(data.value) : null;
+    }catch(e){ console.error('room read failed', e); return null; }
   }
   async function writeRoom(state){
     state.rev = (state.rev||0) + 1;
     state.updatedAt = Date.now();
     try{
-      await window.storage.set(roomKey(state.code), JSON.stringify(state), true);
-    }catch(e){ console.error('storage write failed', e); }
+      await fetch('/api/room', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ code: state.code, value: JSON.stringify(state) })
+      });
+    }catch(e){ console.error('room write failed', e); }
     return state;
   }
 
   async function callJudge(system, user, maxTokens){
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await fetch('/api/judge', {
       method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: maxTokens || 1000,
-        system: system,
-        messages: [{role:"user", content:user}]
-      })
+      body: JSON.stringify({ system, user, maxTokens: maxTokens || 1000 })
     });
     const data = await res.json();
+    if(data.error) throw new Error(data.error);
     const text = (data.content||[]).map(b=>b.type==='text'?b.text:'').join('\n').trim();
     const clean = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
     return JSON.parse(clean);
