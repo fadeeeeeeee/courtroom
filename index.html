@@ -604,8 +604,23 @@
     const bothRoled = bothIn && players.every(p=>p.role);
     const canBegin = bothRoled && state.caseReady;
     $('lobby-waiting').style.display = canBegin ? 'none' : '';
-    if(!bothRoled) $('lobby-waiting').textContent = 'Waiting for opposing counsel to join & choose a side…';
-    else if(!state.caseReady) $('lobby-waiting').textContent = 'Waiting for the host to finish writing the case…';
+
+    if(!bothIn){
+      $('lobby-waiting').textContent = 'Share the case number above — waiting for opposing counsel to join…';
+    } else if(!bothRoled){
+      const unroled = players.filter(p=>!p.role);
+      const iAmUnroled = !state.players[myPlayerId].role;
+      if(unroled.length === 2){
+        $('lobby-waiting').textContent = 'Both of you still need to choose a side above.';
+      } else if(iAmUnroled){
+        $('lobby-waiting').textContent = 'Choose your side above to continue.';
+      } else {
+        const names = unroled.map(p=>p.name).join(', ');
+        $('lobby-waiting').textContent = `Waiting for ${names} to choose a side…`;
+      }
+    } else if(!state.caseReady){
+      $('lobby-waiting').textContent = 'Waiting for the host to finish writing the case…';
+    }
     $('begin-trial-btn').style.display = canBegin ? '' : 'none';
 
     if(state.status === 'trial' || state.status === 'verdict'){
