@@ -406,9 +406,10 @@
     return JSON.parse(clean);
   }
 
+  const viewDisplay = { 'landing-view':'flex', 'lobby-view':'block', 'courtroom-view':'block', 'verdict-view':'block' };
   function showView(name){
     ['landing-view','lobby-view','courtroom-view','verdict-view'].forEach(v=>{
-      $(v).style.display = (v===name) ? '' : 'none';
+      $(v).style.display = (v===name) ? viewDisplay[v] : 'none';
     });
   }
 
