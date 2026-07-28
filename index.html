@@ -163,6 +163,13 @@
     padding:9px 22px; font-family:'IBM Plex Mono'; font-size:11.5px; letter-spacing:.08em; text-transform:uppercase;
     color:var(--walnut); display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
   }
+  #turn-timer{
+    font-size:13px; letter-spacing:.04em; color:var(--walnut); background:var(--parchment-2);
+    padding:3px 10px; border-radius:2px; border:1px solid rgba(59,42,30,0.2); min-width:52px; text-align:center;
+    text-transform:none;
+  }
+  #turn-timer.urgent{ color:var(--burgundy); border-color:var(--burgundy); animation:tick-pulse 1s ease-in-out infinite; }
+  @keyframes tick-pulse{0%,100%{opacity:1;}50%{opacity:.45;}}
 
   #transcript-list{
     background:#f4efe3; padding:22px 26px; min-height:180px; max-height:420px; overflow-y:auto;
@@ -301,7 +308,7 @@
       </div>
       <div class="phase-strip">
         <span id="phase-label">Phase</span>
-        <span id="phase-controls"></span>
+        <span id="turn-timer" class="mono"></span>
       </div>
       <div id="transcript-list"></div>
       <div class="action-bar">
@@ -405,6 +412,151 @@
     const clean = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/```\s*$/,'').trim();
     return JSON.parse(clean);
   }
+
+  // ---------------- turn timer & bench formalities ----------------
+  const TURN_LIMIT_MS = 2 * 60 * 1000;
+
+  const BENCH_LINES = {
+    trialOpen: [
+      "The court is now in session. Plaintiff's counsel, you may deliver your opening statement.",
+      "All rise — this trial is now in session. Plaintiff, please proceed with your opening statement."
+    ],
+    toOpponentOpening: [
+      "The court has heard the plaintiff's opening remarks. Defense counsel, you may proceed.",
+      "Noted for the record. The defense may now deliver its opening statement.",
+      "Thank you, counsel. The floor passes to the defense for its opening statement."
+    ],
+    toArguments: [
+      "Both opening statements are now on the record. We proceed to arguments — plaintiff, you may begin.",
+      "The court is ready to hear arguments. Plaintiff's counsel, the floor is yours.",
+      "Openings concluded. Plaintiff, you may open the argument phase."
+    ],
+    argumentPass: [
+      "Thank you, counsel. {next}, you may respond.",
+      "Noted by the court. The floor now passes to {next}.",
+      "The court has heard your point. {next}, your response?",
+      "Duly noted. {next}, you may proceed."
+    ],
+    manualToClosing: [
+      "The court will now hear closing statements. Plaintiff, you may proceed.",
+      "We move to closing arguments. Plaintiff's counsel, you have the floor."
+    ],
+    toClosingOpponent: [
+      "The plaintiff's closing has been heard. Defense, you may deliver your closing remarks.",
+      "Noted for the record. Defense counsel, your closing statement, please."
+    ],
+    toVerdictReady: [
+      "Both closing statements are now on the record. The court is prepared to render a verdict whenever counsel is ready.",
+      "Closing arguments concluded. Either counsel may request the court's verdict when ready."
+    ],
+    timeout: [
+      "The court notes that {name} did not respond within the allotted time. The floor passes to opposing counsel.",
+      "Time has elapsed for {name}'s remarks. We proceed to the other side.",
+      "{name}'s time has expired. The court moves the proceedings forward."
+    ]
+  };
+
+  function pickLine(category, ctx){
+    const arr = BENCH_LINES[category] || ['Noted for the record.'];
+    let line = arr[Math.floor(Math.random()*arr.length)];
+    if(ctx){
+      Object.keys(ctx).forEach(k=>{ line = line.split('{'+k+'}').join(ctx[k]); });
+    }
+    return line;
+  }
+
+  // Mutates state.phase/turnRole/turnStartedAt to reflect the turn that just finished.
+  function advanceTurnState(state){
+    const finishedRole = state.turnRole;
+    if(state.phase === 'opening'){
+      if(finishedRole === 'plaintiff'){
+        state.turnRole = 'defense';
+      } else {
+        state.phase = 'arguments';
+        state.turnRole = 'plaintiff';
+      }
+    } else if(state.phase === 'arguments'){
+      state.turnRole = (finishedRole === 'plaintiff') ? 'defense' : 'plaintiff';
+    } else if(state.phase === 'closing'){
+      if(finishedRole === 'plaintiff'){
+        state.turnRole = 'defense';
+      } else {
+        state.phase = 'verdict_ready';
+        state.turnRole = null;
+      }
+    }
+    state.turnStartedAt = state.turnRole ? Date.now() : null;
+    return state;
+  }
+
+  function benchLineForTransition(oldPhase, finishedRole, newState){
+    if(oldPhase === 'opening'){
+      if(finishedRole === 'plaintiff') return pickLine('toOpponentOpening');
+      return pickLine('toArguments');
+    }
+    if(oldPhase === 'arguments'){
+      const nextName = (Object.values(newState.players).find(p=>p.role===newState.turnRole)||{}).name || 'Counsel';
+      return pickLine('argumentPass', {next: nextName});
+    }
+    if(oldPhase === 'closing'){
+      if(finishedRole === 'plaintiff') return pickLine('toClosingOpponent');
+      return pickLine('toVerdictReady');
+    }
+    return 'Noted for the record.';
+  }
+
+  let handlingTimeout = false;
+  async function handleTimeout(expectedTurnStartedAt, expectedTurnRole, expectedPhase){
+    if(handlingTimeout) return;
+    handlingTimeout = true;
+    try{
+      const fresh = await readRoom(roomCode);
+      if(!fresh) return;
+      // Bail if someone already handled this exact timeout (state has moved on).
+      if(fresh.turnStartedAt !== expectedTurnStartedAt || fresh.turnRole !== expectedTurnRole || fresh.phase !== expectedPhase) return;
+      if(fresh.objection && !fresh.objection.resolved) return;
+
+      const speakerName = (Object.values(fresh.players).find(p=>p.role===expectedTurnRole)||{}).name || 'Counsel';
+      fresh.transcript = fresh.transcript || [];
+      fresh.transcript.push({ type:'bench', text: pickLine('timeout', {name:speakerName}), ts: Date.now() });
+
+      const oldPhase = fresh.phase;
+      const finishedRole = fresh.turnRole;
+      advanceTurnState(fresh);
+      fresh.transcript.push({ type:'bench', text: benchLineForTransition(oldPhase, finishedRole, fresh), ts: Date.now() });
+
+      await writeRoom(fresh);
+      if(crState) renderCourtroomDynamic(fresh);
+    } finally {
+      handlingTimeout = false;
+    }
+  }
+
+  function timerTick(){
+    if(!crState || crState.status !== 'trial') return;
+    const el = $('turn-timer');
+    if(!el) return;
+    const activePhaseForTurn = (crState.phase === 'opening' || crState.phase === 'closing' || crState.phase === 'arguments');
+    if(!activePhaseForTurn || !crState.turnRole || !crState.turnStartedAt){
+      el.textContent = '';
+      el.classList.remove('urgent');
+      return;
+    }
+    const objectionPending = crState.objection && !crState.objection.resolved;
+    const elapsed = objectionPending
+      ? (crState.objection.ts - crState.turnStartedAt)
+      : (Date.now() - crState.turnStartedAt);
+    const remainingMs = Math.max(0, TURN_LIMIT_MS - elapsed);
+    const secs = Math.ceil(remainingMs / 1000);
+    const mm = Math.floor(secs / 60), ss = secs % 60;
+    el.textContent = (objectionPending ? '⏸ ' : '') + mm + ':' + String(ss).padStart(2,'0');
+    el.classList.toggle('urgent', secs <= 20 && !objectionPending);
+
+    if(!objectionPending && remainingMs <= 0){
+      handleTimeout(crState.turnStartedAt, crState.turnRole, crState.phase);
+    }
+  }
+  setInterval(timerTick, 1000);
 
   const viewDisplay = { 'landing-view':'flex', 'lobby-view':'block', 'courtroom-view':'block', 'verdict-view':'block' };
   function showView(name){
@@ -642,7 +794,8 @@
       fresh.status = 'trial';
       fresh.phase = 'opening';
       fresh.turnRole = 'plaintiff';
-      fresh.transcript = [];
+      fresh.turnStartedAt = Date.now();
+      fresh.transcript = [{ type:'bench', text: pickLine('trialOpen'), ts: Date.now() }];
       fresh.objection = null;
       fresh.verdict = null;
       await writeRoom(fresh);
@@ -704,6 +857,15 @@
           <div class="t-body">
             <div class="t-speaker judge">Objection — ${esc(e.name)}</div>
             <div class="t-text" style="font-style:italic;">"${esc(e.text)}"</div>
+          </div>
+        </div>`;
+      }
+      if(e.type === 'bench'){
+        return `<div class="t-entry">
+          <div class="t-line-no">${i+1}</div>
+          <div class="t-body">
+            <div class="t-speaker judge">The Bench</div>
+            <div class="t-text" style="font-style:italic; opacity:.85;">${esc(e.text)}</div>
           </div>
         </div>`;
       }
@@ -773,6 +935,7 @@
     if(state.status === 'verdict'){
       enterVerdict(state);
     }
+    timerTick();
   }
 
   async function moveToClosing(){
@@ -780,6 +943,9 @@
     if(fresh.phase !== 'arguments') { renderCourtroomDynamic(fresh); return; }
     fresh.phase = 'closing';
     fresh.turnRole = 'plaintiff';
+    fresh.turnStartedAt = Date.now();
+    fresh.transcript = fresh.transcript || [];
+    fresh.transcript.push({ type:'bench', text: pickLine('manualToClosing'), ts: Date.now() });
     await writeRoom(fresh);
     renderCourtroomDynamic(fresh);
   }
@@ -795,23 +961,11 @@
       fresh.transcript = fresh.transcript || [];
       fresh.transcript.push({ type:'statement', role: myRole, name: myName, text, ts: Date.now() });
 
-      if(fresh.phase === 'opening'){
-        if(myRole === 'plaintiff'){
-          fresh.turnRole = 'defense';
-        } else {
-          fresh.phase = 'arguments';
-          fresh.turnRole = 'plaintiff';
-        }
-      } else if(fresh.phase === 'arguments'){
-        fresh.turnRole = (myRole === 'plaintiff') ? 'defense' : 'plaintiff';
-      } else if(fresh.phase === 'closing'){
-        if(myRole === 'plaintiff'){
-          fresh.turnRole = 'defense';
-        } else {
-          fresh.phase = 'verdict_ready';
-          fresh.turnRole = null;
-        }
-      }
+      const oldPhase = fresh.phase;
+      const finishedRole = fresh.turnRole;
+      advanceTurnState(fresh);
+      fresh.transcript.push({ type:'bench', text: benchLineForTransition(oldPhase, finishedRole, fresh), ts: Date.now() });
+
       await writeRoom(fresh);
       $('statement-input').value = '';
       renderCourtroomDynamic(fresh);
@@ -852,11 +1006,17 @@
 
       fresh = await readRoom(roomCode);
       fresh.transcript.push({ type:'ruling', ruling: ruling.ruling, reasoning: ruling.reasoning, ts: Date.now() });
+      if(fresh.objection && fresh.turnStartedAt){
+        fresh.turnStartedAt += (Date.now() - fresh.objection.ts);
+      }
       fresh.objection = null;
       await writeRoom(fresh);
       renderCourtroomDynamic(fresh);
     }catch(e){
       const fresh = await readRoom(roomCode);
+      if(fresh.objection && fresh.turnStartedAt){
+        fresh.turnStartedAt += (Date.now() - fresh.objection.ts);
+      }
       fresh.objection = null;
       await writeRoom(fresh);
       renderCourtroomDynamic(fresh);
