@@ -241,6 +241,15 @@
   .modal-veil.show{display:flex;}
   .modal-box{background:var(--parchment); border-radius:5px; padding:28px; max-width:440px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,0.35);}
   .modal-box h3{font-family:'Fraunces'; margin:0 0 12px; font-size:20px;}
+  .objection-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .objection-pill{
+    border:1px solid rgba(59,42,30,0.3); border-radius:3px; background:var(--parchment-2);
+    padding:10px 11px; font-size:13px; text-align:left; cursor:pointer; line-height:1.3; color:var(--ink);
+  }
+  .objection-pill:hover{background:rgba(59,42,30,0.08);}
+  .objection-pill.selected{border-color:var(--burgundy); background:rgba(122,31,43,0.1); color:var(--burgundy); font-weight:600;}
+  .objection-pill .pill-desc{display:block; font-size:11px; font-weight:400; opacity:.65; margin-top:2px; color:var(--ink);}
+  @media (max-width:640px){ .objection-grid{grid-template-columns:1fr;} }
 
   /* ---------- VERDICT ---------- */
   #verdict-view{display:none;}
@@ -394,12 +403,13 @@
 
 <!-- Objection modal -->
 <div class="modal-veil" id="objection-modal">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width:480px;">
     <h3 class="disp">State Your Objection</h3>
-    <textarea id="objection-reason-input" class="statement-box" style="min-height:70px;" placeholder="e.g. Speculation, counsel is assuming facts not in evidence"></textarea>
-    <div class="action-row">
+    <div class="objection-grid" id="objection-grid"></div>
+    <input id="objection-detail-input" class="text-input" style="margin-top:12px; margin-bottom:0;" type="text" placeholder="Add a brief detail (optional)" maxlength="140">
+    <div class="action-row" style="margin-top:16px;">
       <button id="objection-cancel-btn" class="ghost-btn">Withdraw</button>
-      <button id="objection-submit-btn" class="burgundy-btn">Raise Objection</button>
+      <button id="objection-submit-btn" class="burgundy-btn" disabled>Raise Objection</button>
     </div>
   </div>
 </div>
@@ -955,11 +965,13 @@
         </div>`;
       }
       if(e.type === 'objection'){
+        const excerpt = e.targetText ? (e.targetText.length > 140 ? e.targetText.slice(0,140) + '…' : e.targetText) : '';
         return `<div class="t-entry">
           <div class="t-line-no">${i+1}</div>
           <div class="t-body">
-            <div class="t-speaker judge">Objection — ${esc(e.name)}</div>
-            <div class="t-text" style="font-style:italic;">"${esc(e.text)}"</div>
+            <div class="t-speaker judge">Objection — ${esc(e.name)}${e.isLive ? ' <span style="opacity:.6; font-weight:400; text-transform:none;">(raised mid-statement)</span>' : ''}</div>
+            <div class="t-text" style="font-style:italic;">${esc(e.text)}</div>
+            ${excerpt ? `<div class="t-text" style="font-size:13px; opacity:.65; margin-top:4px;">Regarding: "${esc(excerpt)}"</div>` : ''}
           </div>
         </div>`;
       }
@@ -1069,8 +1081,11 @@
         draftEl.innerHTML = '';
       }
 
-      // objection button: enabled for the listener, if there's something to object to
-      const canObject = myRole && state.turnRole !== myRole && (state.transcript||[]).length > 0
+      // objection button: enabled for the listener, if there's something real to object to
+      // (either the opponent's current in-progress text, or a completed statement)
+      const hasTarget = !!(state.currentDraft && state.currentDraft.trim())
+        || (state.transcript||[]).some(e=>e.type==='statement');
+      const canObject = myRole && state.turnRole !== myRole && hasTarget
         && !objectionPending && state.phase !== 'verdict_ready';
       $('objection-btn').disabled = !canObject;
     }
@@ -1163,32 +1178,81 @@
   });
 
   // ---------------- Objection modal ----------------
-  $('objection-btn').addEventListener('click', ()=>{
-    $('objection-reason-input').value = '';
+  const OBJECTION_CATEGORIES = [
+    { id:'relevance',      label:'Relevance',                   desc:"Not related to the matter at hand." },
+    { id:'speculation',    label:'Speculation',                 desc:'Counsel is guessing, not stating fact.' },
+    { id:'hearsay',        label:'Hearsay',                     desc:'An out-of-court statement offered for its truth.' },
+    { id:'argumentative',  label:'Argumentative',                desc:'Arguing rather than stating a claim.' },
+    { id:'assumes_facts',  label:'Assumes Facts Not in Evidence', desc:'Presumes something never established.' },
+    { id:'badgering',      label:'Badgering',                   desc:'Unfairly attacking the other side.' },
+    { id:'non_responsive', label:'Non-Responsive',              desc:"Doesn't actually address the point." },
+    { id:'conclusion',     label:'Calls for a Conclusion',      desc:'Asks for a legal conclusion, not a fact.' },
+    { id:'other',          label:'Other',                       desc:'Something else — explain briefly below.' }
+  ];
+  let selectedObjectionCategory = null;
+
+  function openObjectionModal(){
+    selectedObjectionCategory = null;
+    $('objection-detail-input').value = '';
+    $('objection-submit-btn').disabled = true;
+    $('objection-grid').innerHTML = OBJECTION_CATEGORIES.map(c=>`
+      <button type="button" class="objection-pill" data-id="${c.id}">${esc(c.label)}<span class="pill-desc">${esc(c.desc)}</span></button>
+    `).join('');
+    $('objection-grid').querySelectorAll('.objection-pill').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        selectedObjectionCategory = btn.getAttribute('data-id');
+        $('objection-grid').querySelectorAll('.objection-pill').forEach(b=>b.classList.remove('selected'));
+        btn.classList.add('selected');
+        $('objection-submit-btn').disabled = false;
+      });
+    });
     $('objection-modal').classList.add('show');
-  });
+  }
+
+  $('objection-btn').addEventListener('click', openObjectionModal);
   $('objection-cancel-btn').addEventListener('click', ()=>{
     $('objection-modal').classList.remove('show');
   });
+
   $('objection-submit-btn').addEventListener('click', async ()=>{
-    const reason = $('objection-reason-input').value.trim();
-    if(!reason || localBusy) return;
+    if(!selectedObjectionCategory || localBusy) return;
+    const categoryObj = OBJECTION_CATEGORIES.find(c=>c.id===selectedObjectionCategory) || { label:'Objection' };
+    const detail = $('objection-detail-input').value.trim();
+    const reasonLabel = categoryObj.label + (detail ? ` — ${detail}` : '');
+
     localBusy = true;
     $('objection-modal').classList.remove('show');
     try{
       let fresh = await readRoom(roomCode);
       if(fresh.objection && !fresh.objection.resolved){ localBusy=false; renderCourtroomDynamic(fresh); return; }
-      fresh.objection = { by: myRole, byName: myName, reason, resolved:false, ts: Date.now() };
-      fresh.transcript.push({ type:'objection', role: myRole, name: myName, text: reason, ts: Date.now() });
+
+      // Target whatever is actually being objected to: the opponent's in-progress
+      // (not yet submitted) text if they're still mid-statement, otherwise their
+      // last completed statement.
+      const liveText = (fresh.currentDraft || '').trim();
+      const lastStatement = (fresh.transcript||[]).filter(e=>e.type==='statement').slice(-1)[0];
+      const targetText = liveText || (lastStatement ? lastStatement.text : '');
+      const isLive = !!liveText;
+
+      fresh.objection = { by: myRole, byName: myName, category: categoryObj.label, detail, reason: reasonLabel, resolved:false, ts: Date.now() };
+      fresh.transcript = fresh.transcript || [];
+      fresh.transcript.push({
+        type:'objection', role: myRole, name: myName, text: reasonLabel,
+        targetText, isLive, ts: Date.now()
+      });
       await writeRoom(fresh);
       renderCourtroomDynamic(fresh);
 
       const lastStatements = fresh.transcript.filter(e=>e.type==='statement').slice(-4)
         .map(e=>`${e.name} (${e.role}): ${e.text}`).join('\n');
 
+      const targetDescription = isLive
+        ? `Counsel objected WHILE the opposing side was still mid-statement, before it was finalized. The in-progress text at the moment of the objection was: "${targetText}"`
+        : `Counsel objected to the most recently completed statement: "${targetText}"`;
+
       const ruling = await callJudge(
-        "You are the presiding AI Judge in a two-player online courtroom debate game. You will be given the fictional case, recent statements, and an objection just raised by one lawyer against the other. Decide whether to sustain or overrule it, and give one short, in-character judicial sentence explaining why. Be fair and don't always rule the same way. Respond with ONLY valid JSON, nothing else, matching exactly: {\"ruling\": \"sustained\" or \"overruled\", \"reasoning\": string (one sentence, judge's voice)}",
-        `Case: ${fresh.case.title} (${fresh.case.plaintiffName} v. ${fresh.case.defendantName}). Scenario: ${fresh.case.scenario}\n\nRecent statements:\n${lastStatements}\n\nObjection raised by ${fresh.objection.byName} (${myRole}): "${reason}"`,
+        "You are the presiding AI Judge in a two-player online courtroom debate game. You will be given the fictional case, recent statements, a standardized objection category (e.g. Relevance, Hearsay, Speculation) optionally with a short detail from the objecting lawyer, and the specific text being objected to. Decide whether to sustain or overrule it, and give one short, in-character judicial sentence explaining why. If the objection was raised while the statement was still incomplete, weigh whether it was premature. Be fair and don't always rule the same way. Respond with ONLY valid JSON, nothing else, matching exactly: {\"ruling\": \"sustained\" or \"overruled\", \"reasoning\": string (one sentence, judge's voice)}",
+        `Case: ${fresh.case.title} (${fresh.case.plaintiffName} v. ${fresh.case.defendantName}). Scenario: ${fresh.case.scenario}\n\nRecent statements:\n${lastStatements}\n\n${targetDescription}\n\nObjection category raised by ${fresh.objection.byName} (${myRole}): "${categoryObj.label}"${detail ? ' — ' + detail : ''}`,
         400
       );
 
