@@ -208,6 +208,15 @@
   .banner.wait{background:rgba(45,59,78,0.1); border-color:var(--slate); color:var(--slate);}
   .banner.objection{background:rgba(122,31,43,0.1); border-color:var(--burgundy); color:var(--burgundy);}
 
+  .live-draft{
+    display:none; background:var(--parchment); border:1px dashed rgba(59,42,30,0.3); border-radius:3px;
+    padding:11px 14px; margin-bottom:14px; font-size:14.5px; line-height:1.55; color:var(--walnut-2);
+    font-style:italic; white-space:pre-wrap; word-break:break-word;
+  }
+  .live-draft.show{display:block;}
+  .live-draft .cursor{ display:inline-block; width:2px; height:15px; background:var(--brass); margin-left:2px; vertical-align:middle; animation:cursor-blink 1s step-start infinite; }
+  @keyframes cursor-blink{50%{opacity:0;}}
+
   .modal-veil{position:fixed; inset:0; background:rgba(32,26,18,0.55); display:none; align-items:center; justify-content:center; z-index:50; padding:20px;}
   .modal-veil.show{display:flex;}
   .modal-box{background:var(--parchment); border-radius:5px; padding:28px; max-width:440px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,0.35);}
@@ -313,6 +322,7 @@
       <div id="transcript-list"></div>
       <div class="action-bar">
         <div class="banner wait" id="wait-banner">Awaiting opposing counsel&rsquo;s statement&hellip;</div>
+        <div id="live-draft-preview" class="live-draft"></div>
         <div class="banner objection" id="objection-banner"></div>
         <textarea id="statement-input" class="statement-box" placeholder="Address the court&hellip;"></textarea>
         <div class="action-row">
@@ -486,6 +496,7 @@
       }
     }
     state.turnStartedAt = state.turnRole ? Date.now() : null;
+    state.currentDraft = '';
     return state;
   }
 
@@ -795,6 +806,7 @@
       fresh.phase = 'opening';
       fresh.turnRole = 'plaintiff';
       fresh.turnStartedAt = Date.now();
+      fresh.currentDraft = '';
       fresh.transcript = [{ type:'bench', text: pickLine('trialOpen'), ts: Date.now() }];
       fresh.objection = null;
       fresh.verdict = null;
@@ -913,6 +925,16 @@
       $('wait-banner').textContent = `Awaiting ${speakerName}'s ${phaseLabel(state.phase).toLowerCase()}…`;
     }
 
+    // live typing preview: show the active speaker's in-progress text to the listener
+    const draftEl = $('live-draft-preview');
+    const showDraft = activePhaseForTurn && !iAmSpeaker && !objectionPending && !!(state.currentDraft && state.currentDraft.trim());
+    draftEl.classList.toggle('show', showDraft);
+    if(showDraft){
+      draftEl.innerHTML = esc(state.currentDraft) + '<span class="cursor"></span>';
+    } else {
+      draftEl.innerHTML = '';
+    }
+
     // objection button: enabled for the listener, if there's something to object to
     const canObject = myRole && state.turnRole !== myRole && (state.transcript||[]).length > 0
       && !objectionPending && state.phase !== 'verdict_ready';
@@ -944,6 +966,7 @@
     fresh.phase = 'closing';
     fresh.turnRole = 'plaintiff';
     fresh.turnStartedAt = Date.now();
+    fresh.currentDraft = '';
     fresh.transcript = fresh.transcript || [];
     fresh.transcript.push({ type:'bench', text: pickLine('manualToClosing'), ts: Date.now() });
     await writeRoom(fresh);
@@ -968,10 +991,38 @@
 
       await writeRoom(fresh);
       $('statement-input').value = '';
+      lastSentDraft = '';
       renderCourtroomDynamic(fresh);
     } finally {
       localBusy = false;
     }
+  });
+
+  // ---------------- live typing preview ----------------
+  // Broadcasts the active speaker's in-progress text on a throttle, so the
+  // listener sees it update roughly every ~700ms without hammering the
+  // shared-storage backend on every keystroke.
+  let lastSentDraft = '';
+  let draftThrottleTimer = null;
+
+  async function broadcastDraft(text){
+    try{
+      const fresh = await readRoom(roomCode);
+      if(!fresh || fresh.turnRole !== myRole || fresh.status !== 'trial') return;
+      fresh.currentDraft = text;
+      await writeRoom(fresh);
+    }catch(e){ /* non-critical, ignore */ }
+  }
+
+  $('statement-input').addEventListener('input', ()=>{
+    if(draftThrottleTimer) return;
+    draftThrottleTimer = setTimeout(()=>{
+      draftThrottleTimer = null;
+      const text = $('statement-input').value;
+      if(text === lastSentDraft) return;
+      lastSentDraft = text;
+      broadcastDraft(text);
+    }, 700);
   });
 
   // ---------------- Objection modal ----------------
@@ -1082,6 +1133,8 @@
       fresh.case = { title:'', plaintiffName:'', defendantName:'', scenario:'' };
       fresh.phase = null;
       fresh.turnRole = null;
+      fresh.turnStartedAt = null;
+      fresh.currentDraft = '';
       fresh.transcript = [];
       fresh.objection = null;
       fresh.verdict = null;
@@ -1123,7 +1176,7 @@
 
   function startPolling(){
     if(pollTimer) return;
-    pollTimer = setInterval(refreshOnce, 2200);
+    pollTimer = setInterval(refreshOnce, 1200);
   }
 
   // enter key shortcuts
