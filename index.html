@@ -133,6 +133,26 @@
 
   /* ---------- COURTROOM ---------- */
   #courtroom-view{display:none;}
+  #courtroom-layout{display:flex; gap:16px; align-items:flex-start;}
+  #trial-folder{flex:1; min-width:0;}
+  #spectator-chat-panel{
+    width:270px; flex-shrink:0; display:flex; flex-direction:column;
+    max-height:640px; overflow:hidden;
+  }
+  #spectator-chat-list{
+    flex:1; overflow-y:auto; padding:12px 16px; font-size:13.5px; line-height:1.5;
+    min-height:120px;
+  }
+  .chat-msg{margin-bottom:11px;}
+  .chat-msg .chat-name{
+    font-family:'IBM Plex Mono'; font-size:10px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--walnut); opacity:.55; margin-bottom:2px;
+  }
+  #spectator-chat-input-row{
+    display:flex; gap:6px; padding:10px 14px; border-top:1px solid var(--paper-line);
+  }
+  #spectator-chat-input-row .text-input{ margin-bottom:0; font-size:13.5px; padding:9px 11px; }
+  #spectator-chat-input-row button{ font-size:12.5px; padding:9px 13px; white-space:nowrap; }
   .case-header{
     background:var(--walnut); color:var(--parchment); border-radius:4px 4px 0 0;
     padding:20px 26px; position:relative; overflow:hidden;
@@ -244,6 +264,8 @@
     .podiums{flex-direction:column;}
     .side-picker{flex-direction:column;}
     .landing-title{font-size:34px;}
+    #courtroom-layout{flex-direction:column;}
+    #spectator-chat-panel{width:100%; max-height:280px;}
   }
 </style>
 </head>
@@ -268,6 +290,11 @@
         <div class="join-row" id="join-row">
           <input id="join-code-input" class="text-input mono" style="margin-bottom:0" type="text" placeholder="CODE" maxlength="6">
           <button id="join-room-btn" class="brass-btn" style="white-space:nowrap;">Join</button>
+        </div>
+        <button id="show-spectate-btn" class="ghost-btn">Enter as Spectator</button>
+        <div class="join-row" id="spectate-row">
+          <input id="spectate-code-input" class="text-input mono" style="margin-bottom:0" type="text" placeholder="CODE" maxlength="6">
+          <button id="spectate-join-btn" class="brass-btn" style="white-space:nowrap;">Watch</button>
         </div>
       </div>
       <div class="error-line" id="landing-error"></div>
@@ -297,41 +324,55 @@
 
   <!-- COURTROOM -->
   <div id="courtroom-view">
-    <div class="folder" style="overflow:hidden;">
-      <div class="case-header">
-        <div class="docket-no mono" id="cr-docket">DOCKET</div>
-        <div class="case-title" id="cr-title">Case Title</div>
-        <div class="case-summary" id="cr-summary">Summary</div>
-      </div>
-      <div class="podiums">
-        <div class="podium plaintiff" id="podium-plaintiff">
-          <div class="turn-flag">Speaking</div>
-          <div class="role-label">Plaintiff's Counsel</div>
-          <div class="role-name">&mdash;</div>
+    <div id="courtroom-layout">
+      <div class="folder" id="trial-folder" style="overflow:hidden;">
+        <div class="case-header">
+          <div class="docket-no mono" id="cr-docket">DOCKET</div>
+          <div class="case-title" id="cr-title">Case Title</div>
+          <div class="case-summary" id="cr-summary">Summary</div>
         </div>
-        <div class="podium defense" id="podium-defense">
-          <div class="turn-flag">Speaking</div>
-          <div class="role-label">Defense Counsel</div>
-          <div class="role-name">&mdash;</div>
-        </div>
-      </div>
-      <div class="phase-strip">
-        <span id="phase-label">Phase</span>
-        <span id="turn-timer" class="mono"></span>
-      </div>
-      <div id="transcript-list"></div>
-      <div class="action-bar">
-        <div class="banner wait" id="wait-banner">Awaiting opposing counsel&rsquo;s statement&hellip;</div>
-        <div id="live-draft-preview" class="live-draft"></div>
-        <div class="banner objection" id="objection-banner"></div>
-        <textarea id="statement-input" class="statement-box" placeholder="Address the court&hellip;"></textarea>
-        <div class="action-row">
-          <div class="left-group">
-            <button id="submit-statement-btn" class="brass-btn">Deliver Statement</button>
-            <button id="objection-btn" class="burgundy-btn">Objection!</button>
+        <div class="podiums">
+          <div class="podium plaintiff" id="podium-plaintiff">
+            <div class="turn-flag">Speaking</div>
+            <div class="role-label">Plaintiff's Counsel</div>
+            <div class="role-name">&mdash;</div>
           </div>
-          <div class="left-group" id="phase-advance-group"></div>
+          <div class="podium defense" id="podium-defense">
+            <div class="turn-flag">Speaking</div>
+            <div class="role-label">Defense Counsel</div>
+            <div class="role-name">&mdash;</div>
+          </div>
         </div>
+        <div class="phase-strip">
+          <span id="phase-label">Phase</span>
+          <span id="turn-timer" class="mono"></span>
+        </div>
+        <div id="transcript-list"></div>
+        <div class="action-bar" id="action-bar">
+          <div class="banner wait" id="wait-banner">Awaiting opposing counsel&rsquo;s statement&hellip;</div>
+          <div id="live-draft-preview" class="live-draft"></div>
+          <div class="banner objection" id="objection-banner"></div>
+          <textarea id="statement-input" class="statement-box" placeholder="Address the court&hellip;"></textarea>
+          <div class="action-row">
+            <div class="left-group">
+              <button id="submit-statement-btn" class="brass-btn">Deliver Statement</button>
+              <button id="objection-btn" class="burgundy-btn">Objection!</button>
+            </div>
+            <div class="left-group" id="phase-advance-group"></div>
+          </div>
+        </div>
+        <div class="banner wait show" id="spectator-notice" style="display:none; margin:0 26px 22px;">You're watching as a spectator — chat with the gallery on the right.</div>
+      </div>
+
+      <div class="folder" id="spectator-chat-panel">
+        <div class="folder-tab">Gallery</div>
+        <div class="eyebrow" style="padding:16px 16px 0;">Spectator Chat</div>
+        <div id="spectator-chat-list"></div>
+        <div id="spectator-chat-input-row">
+          <input id="spectator-chat-input" class="text-input" type="text" placeholder="Say something&hellip;" maxlength="240">
+          <button id="spectator-chat-send-btn" class="ghost-btn">Send</button>
+        </div>
+        <div class="eyebrow" id="spectator-chat-locked-note" style="display:none; padding:12px 16px;">Only spectators can post here.</div>
       </div>
     </div>
     <div class="footer-note">The AI Judge weighs argument quality within this fictional case only.</div>
@@ -371,6 +412,7 @@
   const myPlayerId = (crypto.randomUUID ? crypto.randomUUID() : ('p-'+Math.random().toString(36).slice(2)));
   let myName = "";
   let myRole = null;      // 'plaintiff' | 'defense'
+  let isSpectator = false;
   let roomCode = null;
   let pollTimer = null;
   let lastSeenRev = -1;
@@ -581,6 +623,10 @@
     $('join-row').classList.add('show');
     $('join-code-input').focus();
   });
+  $('show-spectate-btn').addEventListener('click', ()=>{
+    $('spectate-row').classList.add('show');
+    $('spectate-code-input').focus();
+  });
 
   $('create-room-btn').addEventListener('click', async ()=>{
     const name = $('name-input').value.trim();
@@ -589,10 +635,12 @@
     const code = genCode();
     roomCode = code;
     myRole = null;
+    isSpectator = false;
     const state = {
       code, createdAt: Date.now(), rev:0,
       hostId: myPlayerId,
       players: { [myPlayerId]: { name: myName, role: null } },
+      spectators: {}, spectatorChat: [],
       status: 'lobby',
       case: { title:'', plaintiffName:'', defendantName:'', scenario:'' }, caseReady:false,
       phase: null, turnRole: null,
@@ -613,13 +661,31 @@
     if(!state.players[myPlayerId] && ids.length >= 2){
       $('landing-error').textContent = 'This case already has two counsel assigned.'; return;
     }
-    myName = name; roomCode = code;
+    myName = name; roomCode = code; isSpectator = false;
     if(!state.players[myPlayerId]){
       state.players[myPlayerId] = { name: myName, role: null };
       await writeRoom(state);
     }
     enterLobby();
   });
+
+  $('spectate-join-btn').addEventListener('click', async ()=>{
+    const name = $('name-input').value.trim();
+    const code = $('spectate-code-input').value.trim().toUpperCase();
+    if(!name){ $('landing-error').textContent = 'Enter your name first.'; return; }
+    if(!code){ $('landing-error').textContent = 'Enter the case number.'; return; }
+    const state = await readRoom(code);
+    if(!state){ $('landing-error').textContent = 'No case found with that number.'; return; }
+    myName = name; roomCode = code; isSpectator = true; myRole = null;
+    state.spectators = state.spectators || {};
+    if(!state.spectators[myPlayerId]){
+      state.spectators[myPlayerId] = { name: myName };
+      await writeRoom(state);
+    }
+    enterAsSpectator(state);
+  });
+
+
 
   // ---------------- LOBBY ----------------
   async function enterLobby(){
@@ -629,15 +695,30 @@
     await refreshOnce();
   }
 
+  function enterAsSpectator(state){
+    startPolling();
+    lastSeenRev = state.rev;
+    if(state.status === 'trial'){
+      enterCourtroom(state);
+    } else if(state.status === 'verdict'){
+      enterCourtroom(state);
+      enterVerdict(state);
+    } else {
+      showView('lobby-view');
+      $('lobby-code').textContent = roomCode;
+      renderLobbyFromState(state);
+    }
+  }
+
   function renderSidePicker(state){
     const taken = {};
     Object.values(state.players).forEach(p=>{ if(p.role) taken[p.role] = p.name; });
     const me = state.players[myPlayerId] || {};
-    myRole = me.role || null;
+    myRole = isSpectator ? null : (me.role || null);
 
     const sideHtml = (role, label, sub)=>{
       const heldBy = taken[role];
-      const mine = me.role === role;
+      const mine = !isSpectator && me.role === role;
       const disabled = heldBy && !mine;
       return `<div class="side-card ${mine?'mine':''}">
         <h4 class="disp">${label}</h4>
@@ -645,9 +726,11 @@
         <div style="margin-top:10px;">
           ${mine
             ? `<span class="eyebrow" style="opacity:.8;">&#10003; Your seat</span>`
-            : `<button class="ghost-btn side-pick-btn" data-role="${role}" ${disabled?'disabled':''} style="font-size:13px;padding:8px 14px;">
-                 ${heldBy ? esc(heldBy)+' has this seat' : 'Take this seat'}
-               </button>`
+            : (isSpectator
+                ? `<span class="eyebrow" style="opacity:.6;">${heldBy ? esc(heldBy) : 'Open seat'}</span>`
+                : `<button class="ghost-btn side-pick-btn" data-role="${role}" ${disabled?'disabled':''} style="font-size:13px;padding:8px 14px;">
+                     ${heldBy ? esc(heldBy)+' has this seat' : 'Take this seat'}
+                   </button>`)
           }
         </div>
       </div>`;
@@ -657,18 +740,20 @@
       sideHtml('plaintiff', 'Plaintiff', 'Argues the claim.') +
       sideHtml('defense', 'Defense', 'Argues against it.');
 
-    $('side-picker').querySelectorAll('.side-pick-btn').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const role = btn.getAttribute('data-role');
-        const fresh = await readRoom(roomCode);
-        if(!fresh) return;
-        const takenNow = Object.entries(fresh.players).some(([pid,p])=>p.role===role && pid!==myPlayerId);
-        if(takenNow) return;
-        fresh.players[myPlayerId] = { name: myName, role };
-        await writeRoom(fresh);
-        renderLobbyFromState(fresh);
+    if(!isSpectator){
+      $('side-picker').querySelectorAll('.side-pick-btn').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const role = btn.getAttribute('data-role');
+          const fresh = await readRoom(roomCode);
+          if(!fresh) return;
+          const takenNow = Object.entries(fresh.players).some(([pid,p])=>p.role===role && pid!==myPlayerId);
+          if(takenNow) return;
+          fresh.players[myPlayerId] = { name: myName, role };
+          await writeRoom(fresh);
+          renderLobbyFromState(fresh);
+        });
       });
-    });
+    }
   }
 
   function renderRoster(state){
@@ -678,13 +763,17 @@
         <span class="eyebrow">${p.role ? p.role : 'choosing seat'}</span>
       </div>`;
     }).join('');
-    $('roster').innerHTML = rows;
+    const specCount = Object.keys(state.spectators||{}).length;
+    const specRow = specCount
+      ? `<div class="roster-row"><span class="eyebrow">Gallery</span><span class="eyebrow">${specCount} spectator${specCount===1?'':'s'} watching</span></div>`
+      : '';
+    $('roster').innerHTML = rows + specRow;
   }
 
   let lastCaseFormSignature = null;
 
   function renderCaseForm(state, force){
-    const isHost = state.hostId === myPlayerId;
+    const isHost = !isSpectator && state.hostId === myPlayerId;
     const c = state.case || { title:'', plaintiffName:'', defendantName:'', scenario:'' };
     const ready = !!state.caseReady;
 
@@ -772,12 +861,14 @@
     $('lobby-waiting').style.display = canBegin ? 'none' : '';
 
     if(!bothIn){
-      $('lobby-waiting').textContent = 'Share the case number above — waiting for opposing counsel to join…';
+      $('lobby-waiting').textContent = isSpectator
+        ? 'Waiting for both lawyers to join…'
+        : 'Share the case number above — waiting for opposing counsel to join…';
     } else if(!bothRoled){
       const unroled = players.filter(p=>!p.role);
-      const iAmUnroled = !state.players[myPlayerId].role;
+      const iAmUnroled = !isSpectator && state.players[myPlayerId] && !state.players[myPlayerId].role;
       if(unroled.length === 2){
-        $('lobby-waiting').textContent = 'Both of you still need to choose a side above.';
+        $('lobby-waiting').textContent = 'Both lawyers still need to choose a side above.';
       } else if(iAmUnroled){
         $('lobby-waiting').textContent = 'Choose your side above to continue.';
       } else {
@@ -787,7 +878,7 @@
     } else if(!state.caseReady){
       $('lobby-waiting').textContent = 'Waiting for the host to finish writing the case…';
     }
-    $('begin-trial-btn').style.display = canBegin ? '' : 'none';
+    $('begin-trial-btn').style.display = (canBegin && !isSpectator) ? '' : 'none';
 
     if(state.status === 'trial' || state.status === 'verdict'){
       enterCourtroom(state);
@@ -893,9 +984,47 @@
     $('transcript-list').scrollTop = $('transcript-list').scrollHeight;
   }
 
+  // ---------------- spectator chat ----------------
+  function renderSpectatorChat(state){
+    const listEl = $('spectator-chat-list');
+    if(!listEl) return;
+    const list = state.spectatorChat || [];
+    listEl.innerHTML = list.length
+      ? list.map(m=>`<div class="chat-msg">
+          <div class="chat-name mono">${esc(m.name)}</div>
+          <div>${esc(m.text)}</div>
+        </div>`).join('')
+      : `<div class="eyebrow" style="opacity:.5;">No messages yet.</div>`;
+    listEl.scrollTop = listEl.scrollHeight;
+
+    $('spectator-chat-input-row').style.display = isSpectator ? 'flex' : 'none';
+    $('spectator-chat-locked-note').style.display = isSpectator ? 'none' : 'block';
+  }
+
+  async function sendSpectatorChat(){
+    if(!isSpectator) return;
+    const input = $('spectator-chat-input');
+    const text = input.value.trim();
+    if(!text) return;
+    input.value = '';
+    try{
+      const fresh = await readRoom(roomCode);
+      if(!fresh) return;
+      fresh.spectatorChat = fresh.spectatorChat || [];
+      fresh.spectatorChat.push({ name: myName, text, ts: Date.now() });
+      await writeRoom(fresh);
+      renderSpectatorChat(fresh);
+      if(crState) crState.spectatorChat = fresh.spectatorChat;
+    }catch(e){ /* non-critical */ }
+  }
+  $('spectator-chat-send-btn').addEventListener('click', sendSpectatorChat);
+  $('spectator-chat-input').addEventListener('keydown', e=>{
+    if(e.key === 'Enter'){ e.preventDefault(); sendSpectatorChat(); }
+  });
+
   function renderCourtroomDynamic(state){
     crState = state;
-    const iAmSpeaker = state.turnRole === myRole;
+    const iAmSpeaker = !isSpectator && state.turnRole === myRole;
     const activePhaseForTurn = (state.phase === 'opening' || state.phase === 'closing' || state.phase === 'arguments');
 
     $('podium-plaintiff').classList.toggle('on-turn', state.turnRole === 'plaintiff' && activePhaseForTurn);
@@ -903,6 +1032,10 @@
 
     $('phase-label').textContent = phaseLabel(state.phase);
     renderTranscript(state);
+    renderSpectatorChat(state);
+
+    $('action-bar').style.display = isSpectator ? 'none' : '';
+    $('spectator-notice').style.display = isSpectator ? '' : 'none';
 
     // objection banner
     if(state.objection && !state.objection.resolved){
@@ -915,38 +1048,42 @@
 
     const objectionPending = state.objection && !state.objection.resolved;
 
-    // statement controls
-    const canSpeak = activePhaseForTurn && iAmSpeaker && !objectionPending;
-    $('statement-input').disabled = !canSpeak;
-    $('submit-statement-btn').disabled = !canSpeak;
-    $('wait-banner').classList.toggle('show', activePhaseForTurn && !iAmSpeaker && !objectionPending);
-    if(activePhaseForTurn && !iAmSpeaker){
-      const speakerName = (Object.values(state.players).find(p=>p.role===state.turnRole)||{}).name || 'Opposing counsel';
-      $('wait-banner').textContent = `Awaiting ${speakerName}'s ${phaseLabel(state.phase).toLowerCase()}…`;
+    if(!isSpectator){
+      // statement controls
+      const canSpeak = activePhaseForTurn && iAmSpeaker && !objectionPending;
+      $('statement-input').disabled = !canSpeak;
+      $('submit-statement-btn').disabled = !canSpeak;
+      $('wait-banner').classList.toggle('show', activePhaseForTurn && !iAmSpeaker && !objectionPending);
+      if(activePhaseForTurn && !iAmSpeaker){
+        const speakerName = (Object.values(state.players).find(p=>p.role===state.turnRole)||{}).name || 'Opposing counsel';
+        $('wait-banner').textContent = `Awaiting ${speakerName}'s ${phaseLabel(state.phase).toLowerCase()}…`;
+      }
+
+      // live typing preview: show the active speaker's in-progress text to the listener
+      const draftEl = $('live-draft-preview');
+      const showDraft = activePhaseForTurn && !iAmSpeaker && !objectionPending && !!(state.currentDraft && state.currentDraft.trim());
+      draftEl.classList.toggle('show', showDraft);
+      if(showDraft){
+        draftEl.innerHTML = esc(state.currentDraft) + '<span class="cursor"></span>';
+      } else {
+        draftEl.innerHTML = '';
+      }
+
+      // objection button: enabled for the listener, if there's something to object to
+      const canObject = myRole && state.turnRole !== myRole && (state.transcript||[]).length > 0
+        && !objectionPending && state.phase !== 'verdict_ready';
+      $('objection-btn').disabled = !canObject;
     }
 
-    // live typing preview: show the active speaker's in-progress text to the listener
-    const draftEl = $('live-draft-preview');
-    const showDraft = activePhaseForTurn && !iAmSpeaker && !objectionPending && !!(state.currentDraft && state.currentDraft.trim());
-    draftEl.classList.toggle('show', showDraft);
-    if(showDraft){
-      draftEl.innerHTML = esc(state.currentDraft) + '<span class="cursor"></span>';
-    } else {
-      draftEl.innerHTML = '';
-    }
-
-    // objection button: enabled for the listener, if there's something to object to
-    const canObject = myRole && state.turnRole !== myRole && (state.transcript||[]).length > 0
-      && !objectionPending && state.phase !== 'verdict_ready';
-    $('objection-btn').disabled = !canObject;
-
-    // phase advance controls
+    // phase advance controls (lawyers only)
     let controlsHtml = '';
-    if(state.phase === 'arguments' && !objectionPending){
-      controlsHtml = `<button id="to-closing-btn" class="ghost-btn" style="font-size:12.5px;padding:8px 14px;">Move to Closing Statements</button>`;
-    }
-    if(state.phase === 'verdict_ready'){
-      controlsHtml = `<button id="request-verdict-btn" class="brass-btn" style="font-size:13px;padding:9px 16px;">Request the Verdict</button>`;
+    if(!isSpectator){
+      if(state.phase === 'arguments' && !objectionPending){
+        controlsHtml = `<button id="to-closing-btn" class="ghost-btn" style="font-size:12.5px;padding:8px 14px;">Move to Closing Statements</button>`;
+      }
+      if(state.phase === 'verdict_ready'){
+        controlsHtml = `<button id="request-verdict-btn" class="brass-btn" style="font-size:13px;padding:9px 16px;">Request the Verdict</button>`;
+      }
     }
     $('phase-advance-group').innerHTML = controlsHtml;
     const toClosing = $('to-closing-btn');
@@ -1121,6 +1258,7 @@
       <div class="score-item"><div class="score-num">${v.plaintiffScore ?? '—'}</div><div class="score-lbl">${esc(plaintiffName)}</div></div>
       <div class="score-item"><div class="score-num">${v.defenseScore ?? '—'}</div><div class="score-lbl">${esc(defenseName)}</div></div>
     `;
+    $('new-trial-btn').style.display = isSpectator ? 'none' : '';
   }
 
   $('new-trial-btn').addEventListener('click', async ()=>{
