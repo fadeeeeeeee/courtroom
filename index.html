@@ -42,7 +42,51 @@
   input, textarea{font-family:inherit;}
   ::selection{background:var(--brass-light);}
 
-  #app{max-width:1040px;margin:0 auto;padding:28px 20px 60px;}
+  /* ---------- liquid-metal background (landing + lobby only) ---------- */
+  #liquid-bg{
+    display:none;
+    position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none;
+    background:var(--parchment);
+  }
+  body.show-liquid-bg #liquid-bg{ display:block; }
+
+  #liquid-bg .liquid-stripes{
+    position:absolute; inset:-20%;
+    background:repeating-linear-gradient(118deg,
+      var(--parchment) 0px, var(--parchment) 46px,
+      var(--brass-light) 70px, var(--parchment-2) 104px,
+      var(--brass) 130px, var(--parchment) 176px,
+      var(--parchment-2) 210px, var(--brass-light) 240px
+    );
+    filter:url(#liquidTurbulence);
+    opacity:0.55;
+    animation:liquidDrift 55s linear infinite;
+  }
+  #liquid-bg .liquid-sheen{
+    position:absolute; inset:-20%;
+    background:repeating-linear-gradient(62deg,
+      transparent 0px, transparent 90px,
+      rgba(255,250,235,0.5) 110px, transparent 140px
+    );
+    filter:url(#liquidTurbulence);
+    opacity:0.35;
+    mix-blend-mode:overlay;
+    animation:liquidDrift 70s linear infinite reverse;
+  }
+  #liquid-bg .liquid-vignette{
+    position:absolute; inset:0;
+    background:radial-gradient(ellipse at center, transparent 35%, var(--parchment) 88%);
+  }
+  @keyframes liquidDrift{
+    0%{ transform:translate(0,0); }
+    50%{ transform:translate(-4%, 3%); }
+    100%{ transform:translate(0,0); }
+  }
+  @media (prefers-reduced-motion: reduce){
+    #liquid-bg .liquid-stripes, #liquid-bg .liquid-sheen{ animation:none; }
+  }
+
+  #app{max-width:1040px;margin:0 auto;padding:28px 20px 60px; position:relative; z-index:1;}
 
   /* ---------- shared bits ---------- */
   .eyebrow{
@@ -351,6 +395,22 @@
 </style>
 </head>
 <body>
+
+<svg width="0" height="0" style="position:absolute;overflow:hidden;">
+  <filter id="liquidTurbulence" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.010 0.016" numOctaves="2" seed="7" result="turb">
+      <animate attributeName="baseFrequency" dur="34s" values="0.010 0.016;0.016 0.010;0.010 0.016" repeatCount="indefinite"/>
+    </feTurbulence>
+    <feDisplacementMap in="SourceGraphic" in2="turb" scale="70" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<div id="liquid-bg" aria-hidden="true">
+  <div class="liquid-stripes"></div>
+  <div class="liquid-sheen"></div>
+  <div class="liquid-vignette"></div>
+</div>
+
 <div id="app">
 
   <!-- LANDING -->
@@ -713,6 +773,7 @@
     ['landing-view','lobby-view','courtroom-view','verdict-view'].forEach(v=>{
       $(v).style.display = (v===name) ? viewDisplay[v] : 'none';
     });
+    document.body.classList.toggle('show-liquid-bg', name === 'landing-view' || name === 'lobby-view');
   }
 
   // ---------------- LANDING ----------------
@@ -1484,6 +1545,9 @@
   $('statement-input').addEventListener('keydown', e=>{
     if(e.key==='Enter' && (e.metaKey || e.ctrlKey)) $('submit-statement-btn').click();
   });
+
+  // landing is the default visible view on first load
+  document.body.classList.add('show-liquid-bg');
 
 })();
 </script>
