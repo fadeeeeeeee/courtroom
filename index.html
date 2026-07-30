@@ -87,7 +87,39 @@
   }
 
   /* ---------- LANDING ---------- */
-  #landing-view{display:flex; align-items:center; justify-content:center; min-height:78vh;}
+  #landing-view{display:flex; align-items:center; justify-content:center; min-height:78vh; position:relative;}
+
+  #help-icon-wrap{position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:5;}
+  .help-icon{
+    width:34px; height:34px; border-radius:50%; border:2px solid var(--brass);
+    background:var(--parchment-2); color:var(--walnut-2); font-family:'Fraunces', serif; font-weight:700; font-size:16px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0;
+    box-shadow:0 2px 8px rgba(32,26,18,0.18);
+  }
+  .help-icon:hover{background:var(--brass-light);}
+  .help-tooltip{
+    position:absolute; bottom:calc(100% + 12px); left:50%;
+    transform:translateX(-50%) translateY(6px);
+    width:280px; max-width:80vw; background:var(--parchment-2); border:1px solid var(--brass); border-radius:5px;
+    padding:16px 18px; box-shadow:0 12px 30px rgba(32,26,18,0.28);
+    opacity:0; visibility:hidden; pointer-events:none;
+    transition:opacity .15s ease, transform .15s ease;
+    text-align:left;
+  }
+  .help-tooltip::after{
+    content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    border:7px solid transparent; border-top-color:var(--brass);
+  }
+  #help-icon-wrap:hover .help-tooltip, .help-tooltip.show{
+    opacity:1; visibility:visible; pointer-events:auto; transform:translateX(-50%) translateY(0);
+  }
+  .help-tooltip .rules-title{
+    font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--burgundy); font-weight:600; margin-bottom:9px;
+  }
+  .help-tooltip ul{margin:0; padding-left:18px; font-size:13px; line-height:1.55; color:var(--ink);}
+  .help-tooltip li{margin-bottom:6px;}
+  .help-tooltip li:last-child{margin-bottom:0;}
   .landing-card{max-width:520px; width:100%; padding:56px 48px;}
   .landing-title{font-size:44px; font-weight:700; line-height:1.05; margin:18px 0 6px;}
   .landing-sub{font-size:16px; color:var(--walnut); opacity:.85; margin-bottom:34px; line-height:1.5;}
@@ -347,6 +379,21 @@
         </div>
       </div>
       <div class="error-line" id="landing-error"></div>
+    </div>
+
+    <div id="help-icon-wrap">
+      <button id="help-icon" class="help-icon" type="button" aria-label="How to play">?</button>
+      <div class="help-tooltip" id="help-tooltip">
+        <div class="rules-title">Rules:</div>
+        <ul>
+          <li>Enter your name, then open a new case or join one with the code your friend sends you.</li>
+          <li>Pick a side — Plaintiff or Defense.</li>
+          <li>The host writes the case scenario for both of you to argue.</li>
+          <li>Take turns: opening statements, then arguments, then closing statements.</li>
+          <li>Anytime it isn't your turn, you can shout <strong>Objection!</strong> — the AI judge rules on it.</li>
+          <li>After closing statements, request the verdict — the AI judge decides who argued better.</li>
+        </ul>
+      </div>
     </div>
   </div>
 
@@ -676,6 +723,16 @@
   $('show-spectate-btn').addEventListener('click', ()=>{
     $('spectate-row').classList.add('show');
     $('spectate-code-input').focus();
+  });
+
+  $('help-icon').addEventListener('click', (e)=>{
+    e.stopPropagation();
+    $('help-tooltip').classList.toggle('show');
+  });
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('#help-icon-wrap')){
+      $('help-tooltip').classList.remove('show');
+    }
   });
 
   $('create-room-btn').addEventListener('click', async ()=>{
