@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>Docket</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -121,6 +122,7 @@
     padding:14px 20px; border-radius:3px; display:inline-block; margin:14px 0 6px;
   }
   .side-picker{display:flex; gap:14px; margin:22px 0;}
+  .case-name-row{display:flex; gap:14px;}
   .side-card{
     flex:1; border:2px solid rgba(59,42,30,0.2); border-radius:4px; padding:18px;
     background:var(--parchment); text-align:left;
@@ -272,12 +274,47 @@
   .footer-note{text-align:center; font-size:12px; color:var(--walnut); opacity:.5; margin-top:26px;}
 
   @media (max-width:640px){
-    .landing-card, .lobby-card, .verdict-card{padding:34px 24px;}
+    #app{padding:18px 14px 44px;}
+    .landing-card, .lobby-card, .verdict-card{padding:34px 22px;}
     .podiums{flex-direction:column;}
     .side-picker{flex-direction:column;}
-    .landing-title{font-size:34px;}
+    .case-name-row{flex-direction:column; gap:0;}
+    .landing-title{font-size:30px;}
     #courtroom-layout{flex-direction:column;}
     #spectator-chat-panel{width:100%; max-height:280px;}
+
+    /* Prevent iOS Safari auto-zoom on focus by keeping all inputs >=16px */
+    .text-input, .statement-box, #spectator-chat-input, #objection-detail-input{
+      font-size:16px !important;
+    }
+
+    /* Bigger, stacked, easier-to-tap buttons */
+    .brass-btn, .ghost-btn, .burgundy-btn{
+      padding-top:14px; padding-bottom:14px; font-size:15px;
+    }
+    .action-row{flex-direction:column; align-items:stretch;}
+    .action-row .left-group{flex-direction:column; width:100%;}
+    .action-row .left-group button{width:100%;}
+    #phase-advance-group{width:100%;}
+    #phase-advance-group button{width:100%;}
+
+    .case-header{padding:18px 18px;}
+    .case-title{font-size:21px;}
+    .docket-code{font-size:26px; padding:12px 16px;}
+    .phase-strip{padding:10px 16px;}
+    #transcript-list{padding:16px 18px; max-height:320px;}
+    .action-bar{padding:16px 18px 20px;}
+
+    .modal-box{padding:22px; width:calc(100% - 24px);}
+    .objection-grid{grid-template-columns:1fr;}
+
+    .join-row{flex-direction:column; align-items:stretch;}
+    .join-row .text-input{margin-bottom:10px;}
+    .join-row button{width:100%;}
+
+    .score-row{gap:22px;}
+
+    .roster-row{font-size:14px;}
   }
 </style>
 </head>
@@ -804,7 +841,7 @@
         <div class="eyebrow" style="margin-bottom:10px;">Write the Case (only you can see this form)</div>
         <label class="field-label">Case title</label>
         <input id="case-title-input" class="text-input" style="margin-bottom:14px;" type="text" placeholder="e.g. Neighbors v. The Trampoline" value="${esc(c.title)}">
-        <div style="display:flex; gap:14px;">
+        <div class="case-name-row">
           <div style="flex:1;">
             <label class="field-label">Plaintiff / prosecution name</label>
             <input id="case-plaintiff-input" class="text-input" style="margin-bottom:14px;" type="text" placeholder="e.g. Jordan Blake" value="${esc(c.plaintiffName)}">
