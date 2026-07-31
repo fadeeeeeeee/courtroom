@@ -370,6 +370,7 @@
   .auth-tab.active{background:var(--parchment-2); color:var(--ink); border-color:var(--brass);}
   .auth-field-label{font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--walnut); opacity:.75; margin-bottom:6px; display:block;}
   .auth-hint{font-size:12px; color:var(--walnut); opacity:.6; margin-top:-8px; margin-bottom:16px; line-height:1.4;}
+  .auth-success{font-size:13.5px; color:var(--slate-light); background:rgba(107,128,153,0.15); border:1px solid var(--slate); border-radius:3px; padding:12px 14px; margin:-4px 0 16px; line-height:1.5;}
 
   @media (max-width:640px){
     #account-bar{ position:static; justify-content:flex-end; margin:0 0 14px; flex-wrap:wrap; }
@@ -629,8 +630,13 @@
       <button type="button" class="auth-tab" id="auth-tab-signup">Sign Up</button>
     </div>
 
-    <label class="auth-field-label">Username</label>
-    <input id="auth-username-input" class="text-input" type="text" placeholder="e.g. Perry_Mason" maxlength="20" autocomplete="username">
+    <div id="auth-username-wrap">
+      <label class="auth-field-label">Username</label>
+      <input id="auth-username-input" class="text-input" type="text" placeholder="e.g. Perry_Mason" maxlength="20" autocomplete="username">
+    </div>
+
+    <label class="auth-field-label">Email</label>
+    <input id="auth-email-input" class="text-input" type="email" placeholder="you@example.com" autocomplete="email">
 
     <label class="auth-field-label">Password</label>
     <input id="auth-password-input" class="text-input" type="password" placeholder="At least 6 characters" autocomplete="current-password">
@@ -640,8 +646,9 @@
       <input id="auth-confirm-input" class="text-input" type="password" placeholder="Type it again" autocomplete="new-password">
     </div>
 
-    <div class="auth-hint" id="auth-hint">No email needed — just a username and password. This is used for ranked matchmaking and your rating.</div>
+    <div class="auth-hint" id="auth-hint">Sign up with a username, real email, and password. We'll send a confirmation link before your account is active.</div>
     <div class="error-line" id="auth-error"></div>
+    <div class="auth-success" id="auth-success" style="display:none;"></div>
 
     <div class="action-row">
       <button id="auth-cancel-btn" class="ghost-btn">Cancel</button>
@@ -697,8 +704,8 @@
   function isValidUsername(u){
     return /^[a-zA-Z0-9_]{3,20}$/.test(u);
   }
-  function usernameToEmail(u){
-    return u.toLowerCase() + '@thedocket.local';
+  function isValidEmail(e){
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   }
 
   async function initSupabase(){
@@ -755,18 +762,26 @@
     $('auth-tab-signup').classList.toggle('active', isSignup);
     $('auth-modal-title').textContent = isSignup ? 'Sign Up' : 'Log In';
     $('auth-submit-btn').textContent = isSignup ? 'Sign Up' : 'Log In';
+    $('auth-username-wrap').style.display = isSignup ? 'block' : 'none';
     $('auth-confirm-wrap').style.display = isSignup ? 'block' : 'none';
     $('auth-hint').textContent = isSignup
-      ? 'No email needed — just a username and password. This is used for ranked matchmaking and your rating.'
-      : 'Log in with your username and password.';
+      ? "Sign up with a username, real email, and password. We'll send a confirmation link before your account is active."
+      : "Log in with your email and password.";
   }
   function openAuthModal(mode){
     authMode = mode;
     $('auth-username-input').value = '';
+    $('auth-email-input').value = '';
     $('auth-password-input').value = '';
     $('auth-confirm-input').value = '';
     $('auth-error').textContent = '';
+    $('auth-success').style.display = 'none';
+    $('auth-success').textContent = '';
+    $('auth-modal-title').style.display = '';
+    document.querySelectorAll('#auth-modal .auth-field-label, #auth-modal input, #auth-modal .auth-tabs').forEach(el=>{ el.style.display = ''; });
     updateAuthModalUI();
+    $('auth-submit-btn').style.display = '';
+    $('auth-cancel-btn').textContent = 'Cancel';
     $('auth-modal').classList.add('show');
   }
 
@@ -779,10 +794,15 @@
   $('auth-submit-btn').addEventListener('click', async ()=>{
     if(!sb){ $('auth-error').textContent = 'Accounts are still loading — try again in a moment.'; return; }
     const username = $('auth-username-input').value.trim();
+    const email = $('auth-email-input').value.trim();
     const password = $('auth-password-input').value;
 
-    if(!isValidUsername(username)){
+    if(authMode === 'signup' && !isValidUsername(username)){
       $('auth-error').textContent = 'Username must be 3-20 characters: letters, numbers, underscore only.';
+      return;
+    }
+    if(!isValidEmail(email)){
+      $('auth-error').textContent = 'Enter a valid email address.';
       return;
     }
     if(password.length < 6){
@@ -792,7 +812,6 @@
 
     $('auth-submit-btn').disabled = true;
     $('auth-error').textContent = '';
-    const email = usernameToEmail(username);
 
     try{
       if(authMode === 'signup'){
@@ -805,22 +824,35 @@
         const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username } } });
         if(error){
           $('auth-error').textContent = /registered|exists/i.test(error.message)
-            ? 'That username is already taken.'
+            ? 'That email is already registered.'
             : error.message;
           $('auth-submit-btn').disabled = false;
           return;
         }
-        if(data.user) await loadProfileAndShow(data.user.id);
+        if(data.session && data.user){
+          // Email confirmation is off on this project -- session is live immediately.
+          await loadProfileAndShow(data.user.id);
+          $('auth-modal').classList.remove('show');
+        } else {
+          // Normal path: confirmation required before a session exists.
+          document.querySelectorAll('#auth-modal .auth-field-label, #auth-modal input, #auth-modal .auth-tabs, #auth-hint').forEach(el=>{ el.style.display = 'none'; });
+          $('auth-submit-btn').style.display = 'none';
+          $('auth-cancel-btn').textContent = 'Close';
+          $('auth-success').style.display = 'block';
+          $('auth-success').textContent = `Check ${email} for a confirmation link, then log in.`;
+        }
       } else {
         const { data, error } = await sb.auth.signInWithPassword({ email, password });
         if(error){
-          $('auth-error').textContent = 'Incorrect username or password.';
+          $('auth-error').textContent = /confirm/i.test(error.message)
+            ? 'Please confirm your email before logging in — check your inbox.'
+            : 'Incorrect email or password.';
           $('auth-submit-btn').disabled = false;
           return;
         }
         if(data.user) await loadProfileAndShow(data.user.id);
+        $('auth-modal').classList.remove('show');
       }
-      $('auth-modal').classList.remove('show');
     }catch(e){
       $('auth-error').textContent = 'Something went wrong. Try again.';
     }
@@ -1790,7 +1822,7 @@
   $('statement-input').addEventListener('keydown', e=>{
     if(e.key==='Enter' && (e.metaKey || e.ctrlKey)) $('submit-statement-btn').click();
   });
-  ['auth-username-input','auth-password-input','auth-confirm-input'].forEach(id=>{
+  ['auth-username-input','auth-email-input','auth-password-input','auth-confirm-input'].forEach(id=>{
     $(id).addEventListener('keydown', e=>{ if(e.key==='Enter') $('auth-submit-btn').click(); });
   });
 
