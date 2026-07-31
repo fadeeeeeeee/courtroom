@@ -9,6 +9,7 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Source+Serif+4:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
   :root{
     --ink: #e8e8ec;
@@ -332,7 +333,49 @@
   .objection-pill .pill-desc{display:block; font-size:11px; font-weight:400; opacity:.65; margin-top:2px; color:var(--ink);}
   @media (max-width:640px){ .objection-grid{grid-template-columns:1fr;} }
 
-  /* ---------- VERDICT ---------- */
+  /* ---------- ACCOUNT BAR & AUTH MODAL ---------- */
+  #account-bar{
+    position:fixed; top:16px; right:16px; z-index:20;
+    display:flex; align-items:center; gap:10px;
+    font-family:'IBM Plex Mono', monospace; font-size:12.5px;
+  }
+  #account-logged-out{display:flex; gap:8px;}
+  #account-bar .acct-ghost-btn{
+    background:var(--parchment-2); border:1px solid rgba(255,255,255,0.18); color:var(--ink);
+    padding:8px 14px; border-radius:3px; font-size:12.5px; font-family:'IBM Plex Mono', monospace;
+  }
+  #account-bar .acct-ghost-btn:hover{background:rgba(255,255,255,0.06);}
+  #account-summary{
+    display:flex; align-items:center; gap:8px; background:var(--parchment-2);
+    border:1px solid rgba(255,255,255,0.18); border-radius:3px; padding:7px 12px 7px 7px;
+  }
+  .tier-badge{
+    display:inline-flex; align-items:center; justify-content:center;
+    padding:3px 9px; border-radius:2px; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+    font-weight:600; border:1px solid var(--brass); color:var(--brass-light); background:rgba(150,150,160,0.12);
+  }
+  #account-summary .acct-name{color:var(--ink); font-weight:600;}
+  #account-summary .acct-rating{color:var(--walnut); opacity:.8;}
+  #account-bar .acct-logout{
+    background:transparent; border:none; color:var(--walnut); opacity:.7; font-size:11.5px;
+    text-decoration:underline; padding:0; font-family:'IBM Plex Mono', monospace;
+  }
+  #account-bar .acct-logout:hover{opacity:1;}
+
+  .auth-tabs{display:flex; gap:6px; margin-bottom:18px;}
+  .auth-tab{
+    flex:1; padding:10px; text-align:center; border:1px solid rgba(255,255,255,0.18); border-radius:3px;
+    background:transparent; color:var(--walnut); font-size:13px; font-weight:600; letter-spacing:.03em;
+  }
+  .auth-tab.active{background:var(--parchment-2); color:var(--ink); border-color:var(--brass);}
+  .auth-field-label{font-size:11.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--walnut); opacity:.75; margin-bottom:6px; display:block;}
+  .auth-hint{font-size:12px; color:var(--walnut); opacity:.6; margin-top:-8px; margin-bottom:16px; line-height:1.4;}
+
+  @media (max-width:640px){
+    #account-bar{ position:static; justify-content:flex-end; margin:0 0 14px; flex-wrap:wrap; }
+    #account-summary{ flex-wrap:wrap; row-gap:4px; }
+  }
+
   #verdict-view{display:none;}
   .verdict-card{padding:44px; text-align:center;}
   .gavel-mark{font-size:40px; margin-bottom:6px;}
@@ -412,6 +455,22 @@
 </div>
 
 <div id="app">
+
+  <div id="account-bar">
+    <div id="account-logged-out">
+      <button id="show-login-btn" class="acct-ghost-btn">Sign In</button>
+      <button id="show-signup-btn" class="acct-ghost-btn">Sign Up</button>
+    </div>
+    <div id="account-logged-in" style="display:none;">
+      <div id="account-summary">
+        <span class="acct-name" id="acct-name-label">—</span>
+        <span class="tier-badge" id="acct-tier-badge">—</span>
+        <span class="acct-rating" id="acct-rating-label">—</span>
+        <button id="account-logout-btn" class="acct-logout">Log out</button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- LANDING -->
   <div id="landing-view">
@@ -561,6 +620,36 @@
   </div>
 </div>
 
+<!-- Auth modal (Sign Up / Log In) -->
+<div class="modal-veil" id="auth-modal">
+  <div class="modal-box" style="max-width:400px;">
+    <h3 class="disp" id="auth-modal-title">Sign Up</h3>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab" id="auth-tab-login">Log In</button>
+      <button type="button" class="auth-tab" id="auth-tab-signup">Sign Up</button>
+    </div>
+
+    <label class="auth-field-label">Username</label>
+    <input id="auth-username-input" class="text-input" type="text" placeholder="e.g. Perry_Mason" maxlength="20" autocomplete="username">
+
+    <label class="auth-field-label">Password</label>
+    <input id="auth-password-input" class="text-input" type="password" placeholder="At least 6 characters" autocomplete="current-password">
+
+    <div id="auth-confirm-wrap" style="display:none;">
+      <label class="auth-field-label">Confirm Password</label>
+      <input id="auth-confirm-input" class="text-input" type="password" placeholder="Type it again" autocomplete="new-password">
+    </div>
+
+    <div class="auth-hint" id="auth-hint">No email needed — just a username and password. This is used for ranked matchmaking and your rating.</div>
+    <div class="error-line" id="auth-error"></div>
+
+    <div class="action-row">
+      <button id="auth-cancel-btn" class="ghost-btn">Cancel</button>
+      <button id="auth-submit-btn" class="brass-btn">Sign Up</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -587,6 +676,162 @@
     for(let i=0;i<5;i++) c += chars[Math.floor(Math.random()*chars.length)];
     return c;
   }
+
+  // ---------------- accounts (Supabase) ----------------
+  let sb = null;                // supabase client, set once config loads
+  let currentUser = null;       // { id, username, rating, wins, losses }
+  let authMode = 'signup';      // 'signup' | 'login'
+
+  const RANK_TIERS = [
+    { min: 1800, name: 'Legend' },
+    { min: 1600, name: 'Diamond' },
+    { min: 1400, name: 'Platinum' },
+    { min: 1200, name: 'Gold' },
+    { min: 1000, name: 'Silver' },
+    { min: 0,    name: 'Bronze' }
+  ];
+  function tierForRating(rating){
+    for(const t of RANK_TIERS){ if(rating >= t.min) return t.name; }
+    return 'Bronze';
+  }
+  function isValidUsername(u){
+    return /^[a-zA-Z0-9_]{3,20}$/.test(u);
+  }
+  function usernameToEmail(u){
+    return u.toLowerCase() + '@thedocket.local';
+  }
+
+  async function initSupabase(){
+    try{
+      const res = await fetch('/api/config');
+      const cfg = await res.json();
+      if(!cfg.supabaseUrl || !cfg.supabaseAnonKey){
+        console.error('Supabase config missing:', cfg.error || '');
+        return;
+      }
+      sb = supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey);
+      const { data } = await sb.auth.getSession();
+      if(data && data.session && data.session.user){
+        await loadProfileAndShow(data.session.user.id);
+      }
+    }catch(e){
+      console.error('Supabase init failed', e);
+    }
+  }
+
+  async function loadProfileAndShow(userId){
+    try{
+      const { data, error } = await sb.from('profiles')
+        .select('username, rating, wins, losses')
+        .eq('id', userId)
+        .single();
+      if(error || !data){ console.error('profile load failed', error); return; }
+      currentUser = { id: userId, username: data.username, rating: data.rating, wins: data.wins, losses: data.losses };
+      renderAccountBar();
+    }catch(e){ console.error('profile load failed', e); }
+  }
+
+  function renderAccountBar(){
+    if(currentUser){
+      $('account-logged-out').style.display = 'none';
+      $('account-logged-in').style.display = 'flex';
+      $('acct-name-label').textContent = currentUser.username;
+      $('acct-tier-badge').textContent = tierForRating(currentUser.rating);
+      $('acct-rating-label').textContent = currentUser.rating + ' RTG';
+      // Signed-in players play under their account name everywhere -- lock
+      // the guest name field so local-match identity stays consistent.
+      $('name-input').value = currentUser.username;
+      $('name-input').readOnly = true;
+    } else {
+      $('account-logged-out').style.display = 'flex';
+      $('account-logged-in').style.display = 'none';
+      $('name-input').readOnly = false;
+    }
+  }
+
+  function updateAuthModalUI(){
+    const isSignup = authMode === 'signup';
+    $('auth-tab-login').classList.toggle('active', !isSignup);
+    $('auth-tab-signup').classList.toggle('active', isSignup);
+    $('auth-modal-title').textContent = isSignup ? 'Sign Up' : 'Log In';
+    $('auth-submit-btn').textContent = isSignup ? 'Sign Up' : 'Log In';
+    $('auth-confirm-wrap').style.display = isSignup ? 'block' : 'none';
+    $('auth-hint').textContent = isSignup
+      ? 'No email needed — just a username and password. This is used for ranked matchmaking and your rating.'
+      : 'Log in with your username and password.';
+  }
+  function openAuthModal(mode){
+    authMode = mode;
+    $('auth-username-input').value = '';
+    $('auth-password-input').value = '';
+    $('auth-confirm-input').value = '';
+    $('auth-error').textContent = '';
+    updateAuthModalUI();
+    $('auth-modal').classList.add('show');
+  }
+
+  $('show-login-btn').addEventListener('click', ()=>openAuthModal('login'));
+  $('show-signup-btn').addEventListener('click', ()=>openAuthModal('signup'));
+  $('auth-tab-login').addEventListener('click', ()=>{ authMode = 'login'; updateAuthModalUI(); });
+  $('auth-tab-signup').addEventListener('click', ()=>{ authMode = 'signup'; updateAuthModalUI(); });
+  $('auth-cancel-btn').addEventListener('click', ()=>{ $('auth-modal').classList.remove('show'); });
+
+  $('auth-submit-btn').addEventListener('click', async ()=>{
+    if(!sb){ $('auth-error').textContent = 'Accounts are still loading — try again in a moment.'; return; }
+    const username = $('auth-username-input').value.trim();
+    const password = $('auth-password-input').value;
+
+    if(!isValidUsername(username)){
+      $('auth-error').textContent = 'Username must be 3-20 characters: letters, numbers, underscore only.';
+      return;
+    }
+    if(password.length < 6){
+      $('auth-error').textContent = 'Password must be at least 6 characters.';
+      return;
+    }
+
+    $('auth-submit-btn').disabled = true;
+    $('auth-error').textContent = '';
+    const email = usernameToEmail(username);
+
+    try{
+      if(authMode === 'signup'){
+        const confirm = $('auth-confirm-input').value;
+        if(password !== confirm){
+          $('auth-error').textContent = 'Passwords do not match.';
+          $('auth-submit-btn').disabled = false;
+          return;
+        }
+        const { data, error } = await sb.auth.signUp({ email, password, options: { data: { username } } });
+        if(error){
+          $('auth-error').textContent = /registered|exists/i.test(error.message)
+            ? 'That username is already taken.'
+            : error.message;
+          $('auth-submit-btn').disabled = false;
+          return;
+        }
+        if(data.user) await loadProfileAndShow(data.user.id);
+      } else {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if(error){
+          $('auth-error').textContent = 'Incorrect username or password.';
+          $('auth-submit-btn').disabled = false;
+          return;
+        }
+        if(data.user) await loadProfileAndShow(data.user.id);
+      }
+      $('auth-modal').classList.remove('show');
+    }catch(e){
+      $('auth-error').textContent = 'Something went wrong. Try again.';
+    }
+    $('auth-submit-btn').disabled = false;
+  });
+
+  $('account-logout-btn').addEventListener('click', async ()=>{
+    if(sb) await sb.auth.signOut();
+    currentUser = null;
+    renderAccountBar();
+  });
 
   async function readRoom(code){
     try{
@@ -1545,9 +1790,13 @@
   $('statement-input').addEventListener('keydown', e=>{
     if(e.key==='Enter' && (e.metaKey || e.ctrlKey)) $('submit-statement-btn').click();
   });
+  ['auth-username-input','auth-password-input','auth-confirm-input'].forEach(id=>{
+    $(id).addEventListener('keydown', e=>{ if(e.key==='Enter') $('auth-submit-btn').click(); });
+  });
 
   // landing is the default visible view on first load
   document.body.classList.add('show-liquid-bg');
+  initSupabase();
 
 })();
 </script>
