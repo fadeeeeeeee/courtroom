@@ -383,6 +383,13 @@
   .verdict-winner{font-family:'Fraunces'; font-size:30px; font-weight:700; margin:8px 0 18px;}
   .verdict-text{font-size:16.5px; line-height:1.65; max-width:620px; margin:0 auto 26px; color:var(--ink);}
   .score-row{display:flex; justify-content:center; gap:36px; margin:24px 0 30px;}
+  #verdict-rank-line{
+    display:inline-flex; align-items:center; gap:10px; font-family:'IBM Plex Mono', monospace;
+    font-size:14px; background:var(--parchment); border:1px solid var(--brass); border-radius:4px;
+    padding:12px 18px; margin:0 0 22px;
+  }
+  #verdict-rank-line .rank-delta-up{color:#7fb87f;}
+  #verdict-rank-line .rank-delta-down{color:var(--burgundy);}
   .score-item{text-align:center;}
   .score-num{font-family:'IBM Plex Mono'; font-size:32px; font-weight:600;}
   .score-lbl{font-family:'IBM Plex Mono'; font-size:11px; text-transform:uppercase; letter-spacing:.1em; opacity:.6;}
@@ -528,6 +535,8 @@
 
       <div id="roster"></div>
 
+      <div id="ranked-toggle-section" style="display:none; margin-top:18px;"></div>
+
       <div id="case-form-section" style="margin-top:28px;"></div>
 
       <div style="margin-top:26px;">
@@ -602,6 +611,7 @@
       <div class="verdict-winner" id="verdict-winner">&mdash;</div>
       <div class="verdict-text" id="verdict-text">&mdash;</div>
       <div class="score-row" id="verdict-scores"></div>
+      <div id="verdict-rank-line" style="display:none;"></div>
       <button id="new-trial-btn" class="brass-btn">Start a New Trial</button>
     </div>
   </div>
@@ -649,6 +659,9 @@
     <div class="auth-hint" id="auth-hint">Sign up with a username, real email, and password. We'll send a confirmation link before your account is active.</div>
     <div class="error-line" id="auth-error"></div>
     <div class="auth-success" id="auth-success" style="display:none;"></div>
+    <div id="auth-resend-wrap" style="display:none; margin-top:-8px; margin-bottom:14px;">
+      <button type="button" id="auth-resend-btn" class="ghost-btn" style="font-size:12px; padding:6px 10px;">Resend confirmation email</button>
+    </div>
 
     <div class="action-row">
       <button id="auth-cancel-btn" class="ghost-btn">Cancel</button>
@@ -764,6 +777,7 @@
     $('auth-submit-btn').textContent = isSignup ? 'Sign Up' : 'Log In';
     $('auth-username-wrap').style.display = isSignup ? 'block' : 'none';
     $('auth-confirm-wrap').style.display = isSignup ? 'block' : 'none';
+    $('auth-resend-wrap').style.display = isSignup ? 'none' : 'block';
     $('auth-hint').textContent = isSignup
       ? "Sign up with a username, real email, and password. We'll send a confirmation link before your account is active."
       : "Log in with your email and password.";
@@ -1084,12 +1098,13 @@
     const state = {
       code, createdAt: Date.now(), rev:0,
       hostId: myPlayerId,
-      players: { [myPlayerId]: { name: myName, role: null } },
+      players: { [myPlayerId]: { name: myName, role: null, userId: currentUser ? currentUser.id : null } },
       spectators: {}, spectatorChat: [],
       status: 'lobby',
       case: { title:'', plaintiffName:'', defendantName:'', scenario:'' }, caseReady:false,
       phase: null, turnRole: null,
-      transcript: [], objection: null, verdict: null
+      transcript: [], objection: null, verdict: null,
+      ranked: false, rankApplied: false, ratingChanges: null
     };
     await writeRoom(state);
     enterLobby();
@@ -1108,7 +1123,7 @@
     }
     myName = name; roomCode = code; isSpectator = false;
     if(!state.players[myPlayerId]){
-      state.players[myPlayerId] = { name: myName, role: null };
+      state.players[myPlayerId] = { name: myName, role: null, userId: currentUser ? currentUser.id : null };
       await writeRoom(state);
     }
     enterLobby();
@@ -1295,14 +1310,51 @@
     }
   }
 
+  function renderRankedToggle(state){
+    const isHost = !isSpectator && state.hostId === myPlayerId;
+    const section = $('ranked-toggle-section');
+    const players = Object.values(state.players);
+    const bothLoggedIn = players.length === 2 && players.every(p => !!p.userId);
+
+    if(isHost && currentUser){
+      section.style.display = 'block';
+      const checked = state.ranked ? 'checked' : '';
+      const warn = (!bothLoggedIn)
+        ? `<div style="font-size:12px; color:var(--walnut); opacity:.75; margin-top:6px;">Both players need to be signed in for this to count as ranked.</div>`
+        : '';
+      section.innerHTML = `
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px;">
+          <input type="checkbox" id="ranked-toggle-checkbox" ${checked} style="width:18px; height:18px; accent-color:var(--brass);">
+          <span>Ranked Match <span class="eyebrow" style="opacity:.6;">— affects rating</span></span>
+        </label>
+        ${warn}
+      `;
+      $('ranked-toggle-checkbox').addEventListener('change', async (e)=>{
+        const fresh = await readRoom(roomCode);
+        if(!fresh) return;
+        fresh.ranked = e.target.checked;
+        await writeRoom(fresh);
+        renderLobbyFromState(fresh);
+      });
+    } else if(state.ranked){
+      section.style.display = 'block';
+      section.innerHTML = `<span class="tier-badge">Ranked Match</span>`;
+    } else {
+      section.style.display = 'none';
+      section.innerHTML = '';
+    }
+  }
+
   function renderLobbyFromState(state){
     renderSidePicker(state);
     renderRoster(state);
+    renderRankedToggle(state);
     renderCaseForm(state);
     const players = Object.values(state.players);
     const bothIn = players.length === 2;
     const bothRoled = bothIn && players.every(p=>p.role);
-    const canBegin = bothRoled && state.caseReady;
+    const bothLoggedIn = bothIn && players.every(p=>p.userId);
+    const canBegin = bothRoled && state.caseReady && (!state.ranked || bothLoggedIn);
     $('lobby-waiting').style.display = canBegin ? 'none' : '';
 
     if(!bothIn){
@@ -1322,6 +1374,8 @@
       }
     } else if(!state.caseReady){
       $('lobby-waiting').textContent = 'Waiting for the host to finish writing the case…';
+    } else if(state.ranked && !bothLoggedIn){
+      $('lobby-waiting').textContent = 'This is set as a Ranked Match — both players need to be signed in first.';
     }
     $('begin-trial-btn').style.display = (canBegin && !isSpectator) ? '' : 'none';
 
@@ -1338,6 +1392,11 @@
       const fresh = await readRoom(roomCode);
       if(fresh.status !== 'lobby'){ enterCourtroom(fresh); localBusy=false; return; }
       if(!fresh.caseReady){ $('lobby-error').textContent = 'The case still needs to be written.'; $('begin-trial-btn').disabled=false; localBusy=false; return; }
+      const freshPlayers = Object.values(fresh.players);
+      if(fresh.ranked && !(freshPlayers.length === 2 && freshPlayers.every(p=>p.userId))){
+        $('lobby-error').textContent = 'Both players need to be signed in for a ranked match.';
+        $('begin-trial-btn').disabled = false; localBusy = false; return;
+      }
       fresh.status = 'trial';
       fresh.phase = 'opening';
       fresh.turnRole = 'plaintiff';
@@ -1736,6 +1795,9 @@
       fresh.status = 'verdict';
       await writeRoom(fresh);
       enterVerdict(fresh);
+      if(fresh.ranked && !fresh.rankApplied){
+        applyRankedResult(roomCode);
+      }
     }catch(e){
       if(btn){ btn.disabled=false; btn.textContent='Request the Verdict'; }
     }
@@ -1758,6 +1820,43 @@
       <div class="score-item"><div class="score-num">${v.defenseScore ?? '—'}</div><div class="score-lbl">${esc(defenseName)}</div></div>
     `;
     $('new-trial-btn').style.display = isSpectator ? 'none' : '';
+
+    // Ranked rating change -- shown once /api/rank-update has written it into
+    // the room, which either client may have triggered.
+    const rankLine = $('verdict-rank-line');
+    if(state.ranked && state.ratingChanges && myRole && state.ratingChanges[myRole]){
+      const rc = state.ratingChanges[myRole];
+      const up = rc.delta >= 0;
+      rankLine.style.display = 'inline-flex';
+      rankLine.innerHTML = `Your rating: ${rc.before} → ${rc.after}
+        <span class="${up?'rank-delta-up':'rank-delta-down'}">(${up?'+':''}${rc.delta})</span>
+        · ${tierForRating(rc.after)}`;
+      // Keep the account bar in sync immediately, for whichever player this is.
+      if(currentUser && currentUser.id === (players[myPlayerId]||{}).userId){
+        currentUser.rating = rc.after;
+        renderAccountBar();
+      }
+    } else if(state.ranked && !state.ratingChanges){
+      rankLine.style.display = 'inline-flex';
+      rankLine.innerHTML = 'Updating ratings…';
+    } else {
+      rankLine.style.display = 'none';
+      rankLine.innerHTML = '';
+    }
+  }
+
+  async function applyRankedResult(code){
+    try{
+      await fetch('/api/rank-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomCode: code })
+      });
+      const fresh = await readRoom(code);
+      if(fresh && $('verdict-view').style.display !== 'none'){
+        enterVerdict(fresh);
+      }
+    }catch(e){ console.error('ranked result failed', e); }
   }
 
   $('new-trial-btn').addEventListener('click', async ()=>{
@@ -1775,6 +1874,8 @@
       fresh.transcript = [];
       fresh.objection = null;
       fresh.verdict = null;
+      fresh.rankApplied = false;
+      fresh.ratingChanges = null;
       await writeRoom(fresh);
       showView('lobby-view');
       $('lobby-code').textContent = roomCode;
