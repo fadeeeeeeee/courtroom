@@ -133,6 +133,7 @@
 
   /* ---------- LANDING ---------- */
   #landing-view{display:flex; align-items:center; justify-content:center; min-height:78vh; position:relative;}
+  #matchmaking-view{display:none; align-items:center; justify-content:center; min-height:78vh;}
 
   #help-icon-wrap{position:absolute; bottom:20px; left:50%; transform:translateX(-50%); z-index:5;}
   .help-icon{
@@ -491,6 +492,11 @@
       <label class="field-label">Your name, counsel</label>
       <input id="name-input" class="text-input" type="text" placeholder="e.g. Morgan Reyes" maxlength="30">
 
+      <div id="ranked-cta" style="display:none; margin-bottom:14px;">
+        <button id="find-ranked-btn" class="brass-btn" style="width:100%;">Find Ranked Match</button>
+      </div>
+      <div class="divider-word" id="ranked-divider" style="display:none;">or play local</div>
+
       <div class="landing-actions">
         <button id="create-room-btn" class="brass-btn">Open a New Case</button>
         <div class="divider-word">or</div>
@@ -544,6 +550,18 @@
         <button id="begin-trial-btn" class="brass-btn" style="display:none;">The Bench Is Ready &mdash; Begin Trial</button>
       </div>
       <div class="error-line" id="lobby-error"></div>
+    </div>
+  </div>
+
+  <!-- MATCHMAKING -->
+  <div id="matchmaking-view" style="display:none;">
+    <div class="folder lobby-card" style="text-align:center;">
+      <div class="folder-tab">Ranked Queue</div>
+      <div class="waiting-pulse" style="justify-content:center; font-size:16px; margin:22px 0 8px;">
+        <span class="dot"></span> <span id="mm-status-text">Searching for an opponent&hellip;</span>
+      </div>
+      <div class="eyebrow" id="mm-elapsed" style="margin-bottom:26px;"></div>
+      <button id="mm-cancel-btn" class="ghost-btn">Cancel Search</button>
     </div>
   </div>
 
@@ -613,6 +631,7 @@
       <div class="score-row" id="verdict-scores"></div>
       <div id="verdict-rank-line" style="display:none;"></div>
       <button id="new-trial-btn" class="brass-btn">Start a New Trial</button>
+      <button id="verdict-home-btn" class="ghost-btn" style="display:none; margin-top:10px;">Back to Home</button>
     </div>
   </div>
 
@@ -762,10 +781,15 @@
       // the guest name field so local-match identity stays consistent.
       $('name-input').value = currentUser.username;
       $('name-input').readOnly = true;
+      $('ranked-cta').style.display = 'block';
+      $('ranked-divider').style.display = 'flex';
+      $('find-ranked-btn').textContent = `Find Ranked Match — ${currentUser.rating} RTG · ${tierForRating(currentUser.rating)}`;
     } else {
       $('account-logged-out').style.display = 'flex';
       $('account-logged-in').style.display = 'none';
       $('name-input').readOnly = false;
+      $('ranked-cta').style.display = 'none';
+      $('ranked-divider').style.display = 'none';
     }
   }
 
@@ -1059,12 +1083,12 @@
   }
   setInterval(timerTick, 1000);
 
-  const viewDisplay = { 'landing-view':'flex', 'lobby-view':'block', 'courtroom-view':'block', 'verdict-view':'block' };
+  const viewDisplay = { 'landing-view':'flex', 'lobby-view':'block', 'courtroom-view':'block', 'verdict-view':'block', 'matchmaking-view':'flex' };
   function showView(name){
-    ['landing-view','lobby-view','courtroom-view','verdict-view'].forEach(v=>{
+    ['landing-view','lobby-view','courtroom-view','verdict-view','matchmaking-view'].forEach(v=>{
       $(v).style.display = (v===name) ? viewDisplay[v] : 'none';
     });
-    document.body.classList.toggle('show-liquid-bg', name === 'landing-view' || name === 'lobby-view');
+    document.body.classList.toggle('show-liquid-bg', name === 'landing-view' || name === 'lobby-view' || name === 'matchmaking-view');
   }
 
   // ---------------- LANDING ----------------
@@ -1145,7 +1169,138 @@
     enterAsSpectator(state);
   });
 
+  // ---------------- ranked matchmaking ----------------
+  let mmPollTimer = null;
+  let mmElapsedTimer = null;
+  let mmSearchStartedAt = null;
 
+  async function mmRequest(action, extra){
+    try{
+      const res = await fetch('/api/queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, userId: currentUser ? currentUser.id : null, ...extra })
+      });
+      return await res.json();
+    }catch(e){ console.error('matchmaking request failed', e); return null; }
+  }
+
+  function stopMmTimers(){
+    if(mmPollTimer){ clearInterval(mmPollTimer); mmPollTimer = null; }
+    if(mmElapsedTimer){ clearInterval(mmElapsedTimer); mmElapsedTimer = null; }
+    mmSearchStartedAt = null;
+  }
+  function updateMmElapsed(){
+    if(!mmSearchStartedAt) return;
+    const secs = Math.floor((Date.now() - mmSearchStartedAt) / 1000);
+    $('mm-elapsed').textContent = `Elapsed: ${secs}s`;
+  }
+
+  $('find-ranked-btn').addEventListener('click', async ()=>{
+    if(!currentUser){ return; }
+    if(!sb){ $('landing-error').textContent = 'Accounts are still loading — try again in a moment.'; return; }
+
+    showView('matchmaking-view');
+    $('mm-status-text').textContent = 'Searching for an opponent…';
+    $('mm-cancel-btn').style.display = '';
+    $('mm-cancel-btn').textContent = 'Cancel Search';
+    mmSearchStartedAt = Date.now();
+    updateMmElapsed();
+    mmElapsedTimer = setInterval(updateMmElapsed, 1000);
+
+    const result = await mmRequest('join', { username: currentUser.username, rating: currentUser.rating });
+    if(result && result.status === 'matched'){
+      onMatched(result.roomCode, result.role, result.opponent);
+    } else if(result && result.status === 'waiting'){
+      mmPollTimer = setInterval(async ()=>{
+        const r = await mmRequest('poll', {});
+        if(r && r.status === 'matched'){
+          onMatched(r.roomCode, r.role, r.opponent);
+        }
+      }, 2000);
+    } else {
+      $('mm-status-text').textContent = 'Could not reach the matchmaking queue. Please try again.';
+    }
+  });
+
+  $('mm-cancel-btn').addEventListener('click', async ()=>{
+    stopMmTimers();
+    await mmRequest('leave', {});
+    showView('landing-view');
+  });
+
+  async function onMatched(matchedRoomCode, role, opponent){
+    stopMmTimers();
+    roomCode = matchedRoomCode;
+    myRole = role;
+    myName = currentUser.username;
+    isSpectator = false;
+
+    $('mm-status-text').textContent = `Matched with ${opponent.username}! Preparing your case…`;
+    $('mm-cancel-btn').style.display = 'none';
+
+    let fresh = await readRoom(roomCode);
+    if(!fresh){
+      $('mm-status-text').textContent = 'Something went wrong finding that match.';
+      $('mm-cancel-btn').style.display = '';
+      $('mm-cancel-btn').textContent = 'Back to Home';
+      return;
+    }
+    if(!fresh.players[myPlayerId]){
+      fresh.players[myPlayerId] = { name: myName, role: myRole, userId: currentUser.id };
+      await writeRoom(fresh);
+      fresh = await readRoom(roomCode);
+    }
+
+    if(myRole === 'plaintiff'){
+      await generateRankedCaseAndStart(fresh);
+    } else {
+      mmPollTimer = setInterval(async ()=>{
+        const r = await readRoom(roomCode);
+        if(r && r.status === 'trial'){
+          clearInterval(mmPollTimer); mmPollTimer = null;
+          enterCourtroom(r);
+        }
+      }, 1500);
+      setTimeout(()=>{
+        if(mmPollTimer){
+          clearInterval(mmPollTimer); mmPollTimer = null;
+          $('mm-status-text').textContent = "This match couldn't get started. Please try again.";
+          $('mm-cancel-btn').style.display = '';
+          $('mm-cancel-btn').textContent = 'Back to Home';
+        }
+      }, 30000);
+    }
+  }
+
+  async function generateRankedCaseAndStart(fresh){
+    try{
+      const caseData = await callJudge(
+        "You are a creative but concise case generator for a two-player online courtroom debate game. Invent a short, engaging, PG-rated FICTIONAL civil small-claims-style dispute (never real people or organizations, nothing graphic, hateful, or legally sensitive). Respond with ONLY valid JSON and nothing else, matching exactly this schema: {\"title\": string, \"plaintiffName\": string, \"defendantName\": string, \"scenario\": string (3-4 sentences covering what happened, the claim, and what relief is sought)}",
+        "Generate a new random case for a ranked trial between two strangers. Make it fair to argue from both sides.",
+        500
+      );
+      fresh = await readRoom(roomCode);
+      fresh.case = {
+        title: caseData.title, plaintiffName: caseData.plaintiffName, defendantName: caseData.defendantName,
+        scenario: caseData.scenario,
+        docketNumber: 'CV-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000)
+      };
+      fresh.caseReady = true;
+      fresh.status = 'trial';
+      fresh.phase = 'opening';
+      fresh.turnRole = 'plaintiff';
+      fresh.turnStartedAt = Date.now();
+      fresh.currentDraft = '';
+      fresh.transcript = [{ type: 'bench', text: pickLine('trialOpen'), ts: Date.now() }];
+      await writeRoom(fresh);
+      enterCourtroom(fresh);
+    }catch(e){
+      $('mm-status-text').textContent = 'The judge had trouble drafting a case — please try again.';
+      $('mm-cancel-btn').style.display = '';
+      $('mm-cancel-btn').textContent = 'Back to Home';
+    }
+  }
 
   // ---------------- LOBBY ----------------
   async function enterLobby(){
@@ -1419,6 +1574,7 @@
 
   function enterCourtroom(state){
     crState = state;
+    startPolling();
     showView('courtroom-view');
     renderCourtroomStatic(state);
     renderCourtroomDynamic(state);
@@ -1819,7 +1975,8 @@
       <div class="score-item"><div class="score-num">${v.plaintiffScore ?? '—'}</div><div class="score-lbl">${esc(plaintiffName)}</div></div>
       <div class="score-item"><div class="score-num">${v.defenseScore ?? '—'}</div><div class="score-lbl">${esc(defenseName)}</div></div>
     `;
-    $('new-trial-btn').style.display = isSpectator ? 'none' : '';
+    $('new-trial-btn').style.display = (isSpectator || state.matchmade) ? 'none' : '';
+    $('verdict-home-btn').style.display = (!isSpectator && state.matchmade) ? '' : 'none';
 
     // Ranked rating change -- shown once /api/rank-update has written it into
     // the room, which either client may have triggered.
@@ -1884,6 +2041,12 @@
     localBusy = false;
   });
 
+  $('verdict-home-btn').addEventListener('click', ()=>{
+    stopPolling();
+    roomCode = null; myRole = null; crState = null;
+    showView('landing-view');
+  });
+
   // ---------------- polling ----------------
   async function refreshOnce(){
     if(!roomCode) return;
@@ -1915,6 +2078,10 @@
   function startPolling(){
     if(pollTimer) return;
     pollTimer = setInterval(refreshOnce, 1200);
+  }
+  function stopPolling(){
+    if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+    lastSeenRev = -1;
   }
 
   // enter key shortcuts
