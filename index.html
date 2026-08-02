@@ -721,17 +721,40 @@
   let currentUser = null;       // { id, username, rating, wins, losses }
   let authMode = 'signup';      // 'signup' | 'login'
 
+  const TIER_WIDTH = 200;       // rating points per tier
+  const DIVISIONS_PER_TIER = 5; // each tier splits into 5, 4, 3, 2, 1 (1 = highest)
   const RANK_TIERS = [
-    { min: 1800, name: 'Legend' },
+    { min: 1800, name: 'Legend' },   // open-ended top tier, no divisions
     { min: 1600, name: 'Diamond' },
     { min: 1400, name: 'Platinum' },
     { min: 1200, name: 'Gold' },
     { min: 1000, name: 'Silver' },
-    { min: 0,    name: 'Bronze' }
+    { min: 0,    name: 'Bronze' }    // floor for division math only, ratings can go below
   ];
   function tierForRating(rating){
     for(const t of RANK_TIERS){ if(rating >= t.min) return t.name; }
     return 'Bronze';
+  }
+  // Division within the current tier: 5 (just entered) up to 1 (about to
+  // promote), or null for the undivided top tier.
+  function divisionForRating(rating){
+    const tier = RANK_TIERS.find(t => rating >= t.min) || RANK_TIERS[RANK_TIERS.length - 1];
+    if(tier.name === 'Legend') return null;
+    // Bronze has no real tier below it, so unlike the others its width isn't
+    // naturally capped at TIER_WIDTH -- give it a virtual floor so division
+    // math still spans a sensible 200-point band instead of collapsing
+    // almost the whole tier into division 1.
+    const floor = tier.name === 'Bronze' ? 1000 - TIER_WIDTH : tier.min;
+    const progress = Math.min(TIER_WIDTH - 1, Math.max(0, rating - floor));
+    const step = TIER_WIDTH / DIVISIONS_PER_TIER;
+    const fromBottom = Math.min(DIVISIONS_PER_TIER - 1, Math.floor(progress / step));
+    return DIVISIONS_PER_TIER - fromBottom;
+  }
+  // Full display label, e.g. "Silver 4" or "Legend".
+  function rankLabel(rating){
+    const tier = tierForRating(rating);
+    const division = divisionForRating(rating);
+    return division ? `${tier} ${division}` : tier;
   }
   function isValidUsername(u){
     return /^[a-zA-Z0-9_]{3,20}$/.test(u);
@@ -775,7 +798,7 @@
       $('account-logged-out').style.display = 'none';
       $('account-logged-in').style.display = 'flex';
       $('acct-name-label').textContent = currentUser.username;
-      $('acct-tier-badge').textContent = tierForRating(currentUser.rating);
+      $('acct-tier-badge').textContent = rankLabel(currentUser.rating);
       $('acct-rating-label').textContent = currentUser.rating + ' RTG';
       // Signed-in players play under their account name everywhere -- lock
       // the guest name field so local-match identity stays consistent.
@@ -783,7 +806,7 @@
       $('name-input').readOnly = true;
       $('ranked-cta').style.display = 'block';
       $('ranked-divider').style.display = 'flex';
-      $('find-ranked-btn').textContent = `Find Ranked Match — ${currentUser.rating} RTG · ${tierForRating(currentUser.rating)}`;
+      $('find-ranked-btn').textContent = `Find Ranked Match — ${currentUser.rating} RTG · ${rankLabel(currentUser.rating)}`;
     } else {
       $('account-logged-out').style.display = 'flex';
       $('account-logged-in').style.display = 'none';
@@ -1990,10 +2013,13 @@
     if(state.ranked && state.ratingChanges && myRole && state.ratingChanges[myRole]){
       const rc = state.ratingChanges[myRole];
       const up = rc.delta >= 0;
+      const beforeLabel = rankLabel(rc.before);
+      const afterLabel = rankLabel(rc.after);
+      const rankChanged = beforeLabel !== afterLabel;
       rankLine.style.display = 'inline-flex';
       rankLine.innerHTML = `Your rating: ${rc.before} → ${rc.after}
         <span class="${up?'rank-delta-up':'rank-delta-down'}">(${up?'+':''}${rc.delta})</span>
-        · ${tierForRating(rc.after)}`;
+        · ${rankChanged ? `${esc(beforeLabel)} → ${esc(afterLabel)}` : esc(afterLabel)}`;
       // Keep the account bar in sync immediately, for whichever player this is.
       if(currentUser && currentUser.id === (players[myPlayerId]||{}).userId){
         currentUser.rating = rc.after;
