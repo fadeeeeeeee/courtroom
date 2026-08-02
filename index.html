@@ -1978,6 +1978,12 @@
     $('new-trial-btn').style.display = (isSpectator || state.matchmade) ? 'none' : '';
     $('verdict-home-btn').style.display = (!isSpectator && state.matchmade) ? '' : 'none';
 
+    // Don't let a matchmade ranked player leave before the rating update has
+    // actually landed -- otherwise a quick exit could leave a match unrated.
+    const ratingStillPending = state.ranked && !state.ratingChanges;
+    $('verdict-home-btn').disabled = ratingStillPending;
+    $('verdict-home-btn').textContent = ratingStillPending ? 'Updating ratings…' : 'Back to Home';
+
     // Ranked rating change -- shown once /api/rank-update has written it into
     // the room, which either client may have triggered.
     const rankLine = $('verdict-rank-line');
@@ -2072,6 +2078,9 @@
         renderCourtroomDynamic(state);
       }
       enterVerdict(state);
+      if(!isSpectator && state.ranked && !state.rankApplied){
+        applyRankedResult(roomCode);
+      }
     }
   }
 
