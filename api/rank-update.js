@@ -124,8 +124,10 @@ module.exports = async (req, res) => {
         body: JSON.stringify({ rating: newRating, wins: prevWins + winsAdd, losses: prevLosses + lossAdd })
       });
     }
-    await updateProfile(plaintiff.userId, pNew, pWinsAdd, pLossAdd, pRow.wins, pRow.losses);
-    await updateProfile(defense.userId, dNew, dWinsAdd, dLossAdd, dRow.wins, dRow.losses);
+    await Promise.all([
+      updateProfile(plaintiff.userId, pNew, pWinsAdd, pLossAdd, pRow.wins, pRow.losses),
+      updateProfile(defense.userId, dNew, dWinsAdd, dLossAdd, dRow.wins, dRow.losses)
+    ]);
 
     const ratingChanges = {
       plaintiff: { before: pRow.rating, after: pNew, delta: pNew - pRow.rating },
