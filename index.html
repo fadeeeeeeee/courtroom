@@ -1415,6 +1415,20 @@
     const c = state.case || { title:'', plaintiffName:'', defendantName:'', scenario:'' };
     const ready = !!state.caseReady;
 
+    if(state.ranked){
+      // Ranked matches always use a random AI-generated case -- no manual
+      // writing or editing, for either player.
+      $('case-form-section').innerHTML = ready
+        ? `<div class="eyebrow" style="margin-bottom:8px;">Random Case</div>
+           <div class="folder" style="padding:16px 18px; background:var(--parchment);">
+             <div class="disp" style="font-size:18px; font-weight:600;">${esc(c.title)}</div>
+             <div style="font-size:13.5px; margin-top:6px; opacity:.85;">${esc(c.plaintiffName)} v. ${esc(c.defendantName)}</div>
+             <div style="font-size:14px; margin-top:8px; line-height:1.5;">${esc(c.scenario)}</div>
+           </div>`
+        : `<div class="waiting-pulse"><span class="dot"></span> The judge is drafting a random case&hellip;</div>`;
+      return;
+    }
+
     // While the host is actively drafting (not yet saved), skip re-renders triggered
     // by background sync so in-progress typing isn't wiped out. Only re-render when
     // the ready-state actually flips, or on first render, or when explicitly forced.
@@ -1511,8 +1525,15 @@
         const fresh = await readRoom(roomCode);
         if(!fresh) return;
         fresh.ranked = e.target.checked;
+        // Either way, clear whatever case was there -- ranked uses a fresh
+        // random one, and un-ranking should let the host write their own again.
+        fresh.case = { title:'', plaintiffName:'', defendantName:'', scenario:'' };
+        fresh.caseReady = false;
         await writeRoom(fresh);
         renderLobbyFromState(fresh);
+        if(fresh.ranked){
+          await generateRandomCaseForLobby();
+        }
       });
     } else if(state.ranked){
       section.style.display = 'block';
@@ -1520,6 +1541,28 @@
     } else {
       section.style.display = 'none';
       section.innerHTML = '';
+    }
+  }
+
+  async function generateRandomCaseForLobby(){
+    try{
+      const caseData = await callJudge(
+        "You are a creative but concise case generator for a two-player online courtroom debate game. Invent a short, engaging, PG-rated FICTIONAL civil small-claims-style dispute (never real people or organizations, nothing graphic, hateful, or legally sensitive). Respond with ONLY valid JSON and nothing else, matching exactly this schema: {\"title\": string, \"plaintiffName\": string, \"defendantName\": string, \"scenario\": string (3-4 sentences covering what happened, the claim, and what relief is sought)}",
+        "Generate a new random case for a ranked trial. Make it fair to argue from both sides.",
+        500
+      );
+      const fresh = await readRoom(roomCode);
+      if(!fresh || !fresh.ranked) return; // toggled off while generating -- abandon
+      fresh.case = {
+        title: caseData.title, plaintiffName: caseData.plaintiffName, defendantName: caseData.defendantName,
+        scenario: caseData.scenario,
+        docketNumber: 'CV-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000)
+      };
+      fresh.caseReady = true;
+      await writeRoom(fresh);
+      renderLobbyFromState(fresh);
+    }catch(e){
+      $('lobby-error').textContent = 'The judge had trouble drafting a random case — toggle Ranked Match off and back on to retry.';
     }
   }
 
@@ -2069,6 +2112,9 @@
       showView('lobby-view');
       $('lobby-code').textContent = roomCode;
       renderLobbyFromState(fresh);
+      if(fresh.ranked){
+        await generateRandomCaseForLobby();
+      }
     }catch(e){ /* no-op */ }
     localBusy = false;
   });
