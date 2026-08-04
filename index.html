@@ -229,7 +229,11 @@
   .chat-msg{margin-bottom:11px;}
   .chat-msg .chat-name{
     font-family:'IBM Plex Mono'; font-size:10px; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--walnut); opacity:.55; margin-bottom:2px;
+    color:var(--walnut); opacity:.6; margin-bottom:3px;
+  }
+  .chat-msg .chat-bubble{
+    display:inline-block; max-width:100%; background:#f2ede4; color:#1c1a17;
+    border-radius:4px; padding:7px 10px; font-size:13.5px; line-height:1.45; word-break:break-word;
   }
   #spectator-chat-input-row{
     display:flex; gap:6px; padding:10px 14px; border-top:1px solid var(--paper-line);
@@ -313,7 +317,7 @@
 
   .live-draft{
     display:none; background:var(--parchment); border:1px dashed rgba(255,255,255,0.3); border-radius:3px;
-    padding:11px 14px; margin-bottom:14px; font-size:14.5px; line-height:1.55; color:var(--ink);
+    padding:11px 14px; margin-bottom:14px; font-size:14.5px; line-height:1.55; color:#ffffff;
     font-style:italic; white-space:pre-wrap; word-break:break-word;
   }
   .live-draft.show{display:block;}
@@ -1720,7 +1724,7 @@
     listEl.innerHTML = list.length
       ? list.map(m=>`<div class="chat-msg">
           <div class="chat-name mono">${esc(m.name)}</div>
-          <div>${esc(m.text)}</div>
+          <div class="chat-bubble">${esc(m.text)}</div>
         </div>`).join('')
       : `<div class="eyebrow" style="opacity:.5;">No messages yet.</div>`;
     listEl.scrollTop = listEl.scrollHeight;
