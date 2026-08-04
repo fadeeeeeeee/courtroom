@@ -596,6 +596,7 @@
         </div>
         <div id="transcript-list"></div>
         <div class="action-bar" id="action-bar">
+          <div class="banner wait" id="reading-banner" style="display:none;">Both counsel are reviewing the case&hellip;</div>
           <div class="banner wait" id="wait-banner">Awaiting opposing counsel&rsquo;s statement&hellip;</div>
           <div id="live-draft-preview" class="live-draft"></div>
           <div class="banner objection" id="objection-banner"></div>
@@ -966,6 +967,7 @@
 
   // ---------------- turn timer & bench formalities ----------------
   const TURN_LIMIT_MS = 2 * 60 * 1000;
+  const READING_PERIOD_MS = 60 * 1000; // ranked matches only: 1 minute to review the case before opening statements
 
   const BENCH_LINES = {
     trialOpen: [
@@ -1041,6 +1043,29 @@
     return state;
   }
 
+  // Sets status/phase/turnRole on a room whose case is ready to begin.
+  // Ranked matches get a 1-minute reading period first; casual matches go
+  // straight to opening statements, same as before.
+  function beginTrialPhases(state){
+    state.status = 'trial';
+    state.currentDraft = '';
+    state.objection = null;
+    state.verdict = null;
+    if(state.ranked){
+      state.phase = 'reading';
+      state.readingEndsAt = Date.now() + READING_PERIOD_MS;
+      state.turnRole = null;
+      state.turnStartedAt = null;
+      state.transcript = [{ type:'bench', text: 'The court is now in session. Both counsel have one minute to review the case before opening statements begin.', ts: Date.now() }];
+    } else {
+      state.phase = 'opening';
+      state.turnRole = 'plaintiff';
+      state.turnStartedAt = Date.now();
+      state.transcript = [{ type:'bench', text: pickLine('trialOpen'), ts: Date.now() }];
+    }
+    return state;
+  }
+
   function benchLineForTransition(oldPhase, finishedRole, newState){
     if(oldPhase === 'opening'){
       if(finishedRole === 'plaintiff') return pickLine('toOpponentOpening');
@@ -1084,10 +1109,49 @@
     }
   }
 
+  let handlingReadingEnd = false;
+  async function handleReadingPeriodEnd(expectedReadingEndsAt){
+    if(handlingReadingEnd) return;
+    handlingReadingEnd = true;
+    try{
+      const fresh = await readRoom(roomCode);
+      if(!fresh) return;
+      // Bail if someone else already advanced past this reading period.
+      if(fresh.phase !== 'reading' || fresh.readingEndsAt !== expectedReadingEndsAt) return;
+
+      fresh.phase = 'opening';
+      fresh.turnRole = 'plaintiff';
+      fresh.turnStartedAt = Date.now();
+      fresh.transcript = fresh.transcript || [];
+      fresh.transcript.push({ type:'bench', text: pickLine('trialOpen'), ts: Date.now() });
+      await writeRoom(fresh);
+      if(crState) renderCourtroomDynamic(fresh);
+    } finally {
+      handlingReadingEnd = false;
+    }
+  }
+
   function timerTick(){
     if(!crState || crState.status !== 'trial') return;
     const el = $('turn-timer');
     if(!el) return;
+
+    if(crState.phase === 'reading'){
+      const remainingMs = Math.max(0, (crState.readingEndsAt || 0) - Date.now());
+      const secs = Math.ceil(remainingMs / 1000);
+      const mm = Math.floor(secs / 60), ss = secs % 60;
+      el.textContent = mm + ':' + String(ss).padStart(2,'0');
+      el.classList.toggle('urgent', secs <= 10);
+      const rb = $('reading-banner');
+      if(rb && rb.style.display !== 'none'){
+        rb.textContent = `Both counsel are reviewing the case — trial begins in ${secs}s.`;
+      }
+      if(remainingMs <= 0){
+        handleReadingPeriodEnd(crState.readingEndsAt);
+      }
+      return;
+    }
+
     const activePhaseForTurn = (crState.phase === 'opening' || crState.phase === 'closing' || crState.phase === 'arguments');
     if(!activePhaseForTurn || !crState.turnRole || !crState.turnStartedAt){
       el.textContent = '';
@@ -1314,12 +1378,7 @@
         docketNumber: 'CV-' + new Date().getFullYear() + '-' + Math.floor(1000 + Math.random() * 9000)
       };
       fresh.caseReady = true;
-      fresh.status = 'trial';
-      fresh.phase = 'opening';
-      fresh.turnRole = 'plaintiff';
-      fresh.turnStartedAt = Date.now();
-      fresh.currentDraft = '';
-      fresh.transcript = [{ type: 'bench', text: pickLine('trialOpen'), ts: Date.now() }];
+      beginTrialPhases(fresh);
       await writeRoom(fresh);
       enterCourtroom(fresh);
     }catch(e){
@@ -1622,14 +1681,9 @@
         $('lobby-error').textContent = 'Both players need to be signed in for a ranked match.';
         $('begin-trial-btn').disabled = false; localBusy = false; return;
       }
-      fresh.status = 'trial';
-      fresh.phase = 'opening';
-      fresh.turnRole = 'plaintiff';
-      fresh.turnStartedAt = Date.now();
-      fresh.currentDraft = '';
-      fresh.transcript = [{ type:'bench', text: pickLine('trialOpen'), ts: Date.now() }];
-      fresh.objection = null;
-      fresh.verdict = null;
+      fresh.rankApplied = false;
+      fresh.ratingChanges = null;
+      beginTrialPhases(fresh);
       await writeRoom(fresh);
       enterCourtroom(fresh);
     }catch(e){
@@ -1663,6 +1717,7 @@
 
   function phaseLabel(phase){
     return {
+      reading: 'Reviewing the Case',
       opening: 'Opening Statements',
       arguments: 'Arguments',
       closing: 'Closing Statements',
@@ -1768,6 +1823,11 @@
 
     $('action-bar').style.display = isSpectator ? 'none' : '';
     $('spectator-notice').style.display = isSpectator ? '' : 'none';
+    $('reading-banner').style.display = (!isSpectator && state.phase === 'reading') ? 'block' : 'none';
+    if(state.phase === 'reading' && state.readingEndsAt){
+      const secs = Math.max(0, Math.ceil((state.readingEndsAt - Date.now()) / 1000));
+      $('reading-banner').textContent = `Both counsel are reviewing the case — trial begins in ${secs}s.`;
+    }
 
     // objection banner
     if(state.objection && !state.objection.resolved){
@@ -1806,7 +1866,7 @@
       const hasTarget = !!(state.currentDraft && state.currentDraft.trim())
         || (state.transcript||[]).some(e=>e.type==='statement');
       const canObject = myRole && state.turnRole !== myRole && hasTarget
-        && !objectionPending && state.phase !== 'verdict_ready';
+        && !objectionPending && state.phase !== 'verdict_ready' && state.phase !== 'reading';
       $('objection-btn').disabled = !canObject;
     }
 
