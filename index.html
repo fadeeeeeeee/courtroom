@@ -359,6 +359,16 @@
     padding:3px 9px; border-radius:2px; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
     font-weight:600; border:1px solid var(--brass); color:var(--brass-light); background:rgba(150,150,160,0.12);
   }
+  .tier-badge.tier-bronze{ border-color:#a5713f; color:#d9a06b; background:rgba(165,113,63,0.16); }
+  .tier-badge.tier-silver{ border-color:var(--brass); color:var(--brass-light); background:rgba(150,150,160,0.12); }
+  .tier-badge.tier-gold{ border-color:#d4af37; color:#f0cf6b; background:rgba(212,175,55,0.16); }
+  .tier-badge.tier-platinum{ border-color:#4caf50; color:#8fdb95; background:rgba(76,175,80,0.16); }
+  .tier-badge.tier-diamond{ border-color:#64b5f6; color:#a6d9ff; background:rgba(100,181,246,0.16); }
+  .tier-badge.tier-legend{
+    border-color:transparent; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.45);
+    background:linear-gradient(90deg, #ffd54f 0%, #ff8f00 55%, #e53935 100%);
+    box-shadow:0 0 10px rgba(255,111,0,0.45);
+  }
   #account-summary .acct-name{color:var(--ink); font-weight:600;}
   #account-summary .acct-rating{color:var(--walnut); opacity:.8;}
   #account-bar .acct-logout{
@@ -761,6 +771,9 @@
     const division = divisionForRating(rating);
     return division ? `${tier} ${division}` : tier;
   }
+  function tierClassFor(rating){
+    return 'tier-' + tierForRating(rating).toLowerCase();
+  }
   function isValidUsername(u){
     return /^[a-zA-Z0-9_]{3,20}$/.test(u);
   }
@@ -804,6 +817,7 @@
       $('account-logged-in').style.display = 'flex';
       $('acct-name-label').textContent = currentUser.username;
       $('acct-tier-badge').textContent = rankLabel(currentUser.rating);
+      $('acct-tier-badge').className = 'tier-badge ' + tierClassFor(currentUser.rating);
       $('acct-rating-label').textContent = currentUser.rating + ' RTG';
       // Signed-in players play under their account name everywhere -- lock
       // the guest name field so local-match identity stays consistent.
