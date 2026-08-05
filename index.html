@@ -1449,7 +1449,7 @@
           if(!fresh) return;
           const takenNow = Object.entries(fresh.players).some(([pid,p])=>p.role===role && pid!==myPlayerId);
           if(takenNow) return;
-          fresh.players[myPlayerId] = { name: myName, role };
+          fresh.players[myPlayerId] = { ...(fresh.players[myPlayerId]||{}), name: myName, role };
           await writeRoom(fresh);
           renderLobbyFromState(fresh);
         });
@@ -2143,11 +2143,15 @@
 
   async function applyRankedResult(code){
     try{
-      await fetch('/api/rank-update', {
+      const res = await fetch('/api/rank-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ roomCode: code })
       });
+      if(!res.ok){
+        const body = await res.json().catch(()=>({}));
+        console.error('rank-update failed:', res.status, body.error || body);
+      }
       const fresh = await readRoom(code);
       if(fresh && $('verdict-view').style.display !== 'none'){
         enterVerdict(fresh);
